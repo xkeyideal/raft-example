@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+option go_package = ".;proto";
+
+// protoc -I ./proto --go_out=./proto --go-grpc_out=./proto ./proto/*.proto
+
+service Example {
+	rpc AddWord(AddWordRequest) returns (AddWordResponse) {}
+	rpc GetWords(GetWordsRequest) returns (GetWordsResponse) {}
+}
+
+message AddWordRequest {
+	string word = 1;
+}
+
+message AddWordResponse {
+	uint64 commit_index = 1;
+}
+
+message GetWordsRequest {
+	string key = 1;
+}
+
+message GetWordsResponse {
+	uint64 read_at_index = 1;
+	string value = 2;
+}

@@ -9,8 +9,6 @@ import (
 
 	"github.com/hashicorp/raft"
 
-	//boltdb "github.com/hashicorp/raft-boltdb"
-
 	"github.com/xkeyideal/raft-example/fsm"
 	pebbledb "github.com/xkeyideal/raft-pebbledb"
 )
@@ -20,17 +18,16 @@ type hraft struct {
 	raftdb *pebbledb.PebbleStore
 }
 
-func NewRaft(baseDir, nodeId, raftAddr string, rfsm raft.FSM, raftBootstrap bool) (*hraft, error) {
+func newRaft(baseDir, nodeId, raftAddr string, rfsm raft.FSM, raftBootstrap bool) (*hraft, error) {
 	c := raft.DefaultConfig()
 	c.LocalID = raft.ServerID(nodeId)
 
 	raftdb, err := pebbledb.NewPebbleStore(filepath.Join(baseDir, "raftdb"), &fsm.Logger{}, pebbledb.DefaultPebbleDBConfig())
 	if err != nil {
-		return nil, fmt.Errorf(`boltdb.NewPebbleStore(%q): %v`, filepath.Join(baseDir, "raftdb"), err)
+		return nil, fmt.Errorf(`pebbledb.NewPebbleStore(%q): %v`, filepath.Join(baseDir, "raftdb"), err)
 	}
 
 	snapshotDir := filepath.Join(baseDir, "raft-snapshot")
-	// snapshot store
 	fss, err := raft.NewFileSnapshotStore(snapshotDir, 3, os.Stderr)
 	if err != nil {
 		return nil, fmt.Errorf(`raft.NewFileSnapshotStore(%q, ...): %v`, snapshotDir, err)

@@ -58,7 +58,7 @@ func (r *StateMachine) Apply(log *raft.Log) any {
 
 		// 更新revision的值
 		cf := r.store.getColumnFamily(cf_default)
-		batch.Set(r.store.buildColumnFamilyKey(cf, []byte(sp.Key)), []byte(sp.Value), r.store.getWo())
+		batch.Set(r.store.buildColumnFamilyKey(cf, []byte(sp.Key)), []byte(sp.Value), pebble.Sync)
 		if err := r.store.write(batch); err != nil {
 			return err
 		}

@@ -18,13 +18,15 @@ type Store struct {
 	baseDir string
 	log     pebble.Logger
 	db      *atomic.Pointer[pebble.DB]
-	wo      *pebble.WriteOptions
-	syncwo  *pebble.WriteOptions
 	closed  *atomic.Bool
 }
 
 func NewStore(baseDir string) (*Store, error) {
 	cfg := pebbledb.DefaultPebbleDBConfig()
+
+	if err := os.MkdirAll(baseDir, os.ModePerm); err != nil {
+		return nil, err
+	}
 
 	log := &Logger{}
 
@@ -43,8 +45,6 @@ func NewStore(baseDir string) (*Store, error) {
 		baseDir: baseDir,
 		log:     log,
 		db:      atomic.NewPointer[pebble.DB](db),
-		wo:      &pebble.WriteOptions{Sync: false},
-		syncwo:  &pebble.WriteOptions{Sync: true},
 		closed:  atomic.NewBool(false),
 	}, nil
 }
@@ -89,22 +89,18 @@ func (s *Store) buildColumnFamilyKey(cf byte, key []byte) []byte {
 	return append([]byte{cf}, key...)
 }
 
-func (s *Store) getWo() *pebble.WriteOptions {
-	return s.wo
-}
-
 func (s *Store) batch() *pebble.Batch {
 	db := s.db.Load()
 	return db.NewBatch()
 }
 
 func (s *Store) write(b *pebble.Batch) error {
-	return b.Commit(s.wo)
+	return b.Commit(pebble.Sync)
 }
 
 func (s *Store) getIterator() *pebble.Iterator {
 	db := s.db.Load()
-	iter := db.NewIter(&pebble.IterOptions{})
+	iter, _ := db.NewIter(&pebble.IterOptions{})
 	return iter
 }
 
@@ -114,7 +110,7 @@ func (s *Store) getSnapshot() *pebble.Snapshot {
 }
 
 func (s *Store) saveSnapShot(nodeId, raftAddr string, snapshot *pebble.Snapshot, sink raft.SnapshotSink) error {
-	iter := snapshot.NewIter(&pebble.IterOptions{})
+	iter, _ := snapshot.NewIter(&pebble.IterOptions{})
 	defer iter.Close()
 
 	start := time.Now()
@@ -238,15 +234,11 @@ func (s *Store) recoverSnapShot(nodeId, raftAddr string, reader io.ReadCloser) e
 			continue
 		}
 
-		// 写入db
-		newdb.Set(kdata, ungzipVData, s.wo)
+		// sync write db
+		newdb.Set(kdata, ungzipVData, pebble.Sync)
 	}
 
-	// 同步写入db
-	// if err := newdb.Apply(wb, s.syncwo); err != nil {
-	// 	return err
-	// }
-	newdb.Flush() // db刷盘
+	newdb.Flush()
 
 	if err := saveCurrentDBDirName(s.baseDir, dbdir); err != nil {
 		return err

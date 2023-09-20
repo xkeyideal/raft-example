@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -23,19 +22,16 @@ type Engine struct {
 }
 
 func NewEngine(raftDir, nodeId, raftAddr, grpcAddr string, raftBootstrap bool) (*Engine, error) {
-	baseDir := filepath.Join(raftDir, nodeId)
-
-	if err := os.MkdirAll(baseDir, os.ModePerm); err != nil {
-		return nil, err
-	}
-
-	store, err := fsm.NewStore(baseDir)
+	userDir := filepath.Join(raftDir, nodeId, "user_data")
+	store, err := fsm.NewStore(userDir)
 	if err != nil {
 		return nil, err
 	}
 
 	fsm := fsm.NewStateMachine(raftAddr, nodeId, store)
-	r, err := NewRaft(baseDir, nodeId, raftAddr, fsm, raftBootstrap)
+
+	metaDir := filepath.Join(raftDir, nodeId, "meta_data")
+	r, err := newRaft(metaDir, nodeId, raftAddr, fsm, raftBootstrap)
 	if err != nil {
 		return nil, err
 	}

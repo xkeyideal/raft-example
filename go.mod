@@ -2,14 +2,12 @@ module github.com/xkeyideal/raft-example
 
 go 1.21.1
 
-replace github.com/xkeyideal/raft-pebbledb => ./raft-pebbledb
-
 require (
-	github.com/cockroachdb/pebble v0.0.0-20230510135629-fe7ae7a62e0f
+	github.com/cockroachdb/pebble v0.0.0-20230914214336-22fbb69a4835
 	github.com/hashicorp/raft v1.5.0
 	github.com/xkeyideal/grpcbalance v1.58.0
 	github.com/xkeyideal/raft-manager v0.0.0-20230918073419-c8b35d896268
-	github.com/xkeyideal/raft-pebbledb v1.3.0
+	github.com/xkeyideal/raft-pebbledb v1.4.0
 	go.uber.org/atomic v1.11.0
 	google.golang.org/grpc v1.58.1
 	google.golang.org/protobuf v1.31.0
@@ -24,6 +22,7 @@ require (
 	github.com/cockroachdb/logtags v0.0.0-20190617123548-eb05cc24525f // indirect
 	github.com/cockroachdb/redact v1.0.8 // indirect
 	github.com/cockroachdb/sentry-go v0.6.1-cockroachdb.2 // indirect
+	github.com/cockroachdb/tokenbucket v0.0.0-20230807174530-cc333fc44b06 // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect

@@ -41,18 +41,12 @@ func (log *Logger) Fatalf(format string, args ...interface{}) {
 func getPebbleDBDir(dir string) (string, error) {
 	var dbdir string
 
-	// 判断是否存在 dir/pebble.running文件
+	// check whether exist dir/pebble.running file
 	newRunning := isNewRun(dir)
 
 	// 全新启动的程序
-	if newRunning { // 不存在pebble.running文件
-		// 此处为了兼容，现有数据已经使用了data_node11772876503705/1/current 进行存储了
-		// fp := filepath.Join(dir, "current")
-		// if existFilePath(fp) {
-		// 	return fp, nil
-		// }
-
-		// 没有，随机生成一个目录作为pebbledb的存储目录
+	if newRunning { // if not exist pebble.running file
+		// random generate a directory as pebbledb's storage directory
 		dbdir = getNewRandomDBDirName(dir)
 		if err := saveCurrentDBDirName(dir, dbdir); err != nil {
 			return "", err

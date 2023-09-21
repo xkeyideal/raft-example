@@ -1,7 +1,6 @@
 package fsm
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -40,7 +39,6 @@ func (r *StateMachine) Apply(log *raft.Log) any {
 		return nil
 	}
 
-	//  将raft的日志转换为db要执行的命令
 	switch log.Type {
 	case raft.LogCommand:
 		var sp setPayload
@@ -49,14 +47,13 @@ func (r *StateMachine) Apply(log *raft.Log) any {
 			return fmt.Errorf("Could not parse payload: %s", err)
 		}
 
-		idx := log.Index
-		idxByte := make([]byte, 8)
-		binary.BigEndian.PutUint64(idxByte, idx)
+		// idx := log.Index
+		// idxByte := make([]byte, 8)
+		// binary.BigEndian.PutUint64(idxByte, idx)
 
 		batch := r.store.batch()
 		defer batch.Close()
 
-		// 更新revision的值
 		cf := r.store.getColumnFamily(cf_default)
 		batch.Set(r.store.buildColumnFamilyKey(cf, []byte(sp.Key)), []byte(sp.Value), pebble.Sync)
 		if err := r.store.write(batch); err != nil {

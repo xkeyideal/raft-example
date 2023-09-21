@@ -65,7 +65,7 @@ func (s *Store) getBytes(key []byte) ([]byte, error) {
 	db := s.db.Load()
 	val, closer, err := db.Get(key)
 
-	// 查询的key不存在，返回空值
+	// if key not found return nil
 	if err == pebble.ErrNotFound {
 		return []byte{}, nil
 	}
@@ -115,18 +115,17 @@ func (s *Store) saveSnapShot(nodeId, raftAddr string, snapshot *pebble.Snapshot,
 
 	start := time.Now()
 
-	// 将db里的数据全部遍历进内存
 	var count uint64 = 0
 	sz := make([]byte, 8)
 
-	// 遍历pebblebd snapshot, 将数据写入 io.Writer
+	// iter pebblebd snapshot, write datas by io.Writer
 	for iter.First(); iter.Valid(); iter.Next() {
 		key := iter.Key()
 		val := iter.Value()
 
 		count++
 
-		// 先写key
+		// write key
 		binary.LittleEndian.PutUint64(sz, uint64(len(key)))
 		if _, err := sink.Write(sz); err != nil { // key size
 			sink.Cancel()
@@ -137,7 +136,7 @@ func (s *Store) saveSnapShot(nodeId, raftAddr string, snapshot *pebble.Snapshot,
 			return err
 		}
 
-		// 再写value
+		// write val
 		// gzip encode
 		gzipVal, err := gzipEncode(val)
 		if err != nil {
@@ -170,7 +169,8 @@ func (s *Store) recoverSnapShot(nodeId, raftAddr string, reader io.ReadCloser) e
 
 	var oldDirName string
 
-	name, err := getCurrentDBDirName(s.baseDir) // 从存储里拿到当前的current db目录
+	// from currentDBFilename get pebbledb current directory
+	name, err := getCurrentDBDirName(s.baseDir)
 	if err != nil {
 		return err
 	}
@@ -181,21 +181,25 @@ func (s *Store) recoverSnapShot(nodeId, raftAddr string, reader io.ReadCloser) e
 		return err
 	}
 
+	wb := newPebbleWriteBatch(newdb)
+
 	var count uint64 = 0
 	sz := make([]byte, 8)
 	start := time.Now()
+	k := 0
 
-	// 开始从snapshot reader里读取数据, 等到EOF退出
+	// from snapshot reader read datas, exit when io.EOF
 	for {
 		count++
 
-		// 先读key
+		// read key
 		_, err := io.ReadFull(reader, sz) // key size
 		if err == io.EOF {
 			break
 		}
 
 		if err != nil {
+			wb.Destroy()
 			return err
 		}
 
@@ -206,15 +210,17 @@ func (s *Store) recoverSnapShot(nodeId, raftAddr string, reader io.ReadCloser) e
 			break
 		}
 		if err != nil {
+			wb.Destroy()
 			return err
 		}
 
-		// 再读val
+		// read val
 		_, err = io.ReadFull(reader, sz) // val size
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
+			wb.Destroy()
 			return err
 		}
 
@@ -225,6 +231,7 @@ func (s *Store) recoverSnapShot(nodeId, raftAddr string, reader io.ReadCloser) e
 			break
 		}
 		if err != nil {
+			wb.Destroy()
 			return err
 		}
 
@@ -234,10 +241,18 @@ func (s *Store) recoverSnapShot(nodeId, raftAddr string, reader io.ReadCloser) e
 			continue
 		}
 
-		// sync write db
-		newdb.Set(kdata, ungzipVData, pebble.Sync)
+		// batch sync write db
+		wb.Put(kdata, ungzipVData)
+		k++
+
+		// per 100 times writes commit batch
+		if k >= 100 {
+			k = 0
+			wb.Commit()
+		}
 	}
 
+	wb.Destroy()
 	newdb.Flush()
 
 	if err := saveCurrentDBDirName(s.baseDir, dbdir); err != nil {
@@ -247,13 +262,13 @@ func (s *Store) recoverSnapShot(nodeId, raftAddr string, reader io.ReadCloser) e
 		return err
 	}
 
-	// 用新db置换老db，并close 老db
+	// swap old & new db
 	old := s.db.Swap(newdb)
 	if old != nil {
 		old.Close()
 	}
 
-	// 删除旧的pebbledb存储的文件数据
+	// remove all old pebbledb storage files
 	if err := os.RemoveAll(oldDirName); err != nil {
 		return err
 	}

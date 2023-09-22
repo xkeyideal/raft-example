@@ -23,9 +23,9 @@ func NewStateMachine(raftAddr string, nodeId string, s *Store) *StateMachine {
 	}
 }
 
-type setPayload struct {
-	Key   string
-	Value string
+type SetPayload struct {
+	Key   string `json:"key"`
+	Value string `json:"val"`
 }
 
 // Apply is called once a log entry is committed by a majority of the cluster.
@@ -41,7 +41,7 @@ func (r *StateMachine) Apply(log *raft.Log) any {
 
 	switch log.Type {
 	case raft.LogCommand:
-		var sp setPayload
+		var sp SetPayload
 		err := json.Unmarshal(log.Data, &sp)
 		if err != nil {
 			return fmt.Errorf("Could not parse payload: %s", err)

@@ -38,12 +38,15 @@ func main() {
 	ch := generateWords()
 
 	var wg sync.WaitGroup
+
+	keys := []string{}
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for w := range ch {
-				_, err := c.AddWord(context.Background(), &pb.AddWordRequest{Word: w})
+			for key := range ch {
+				keys = append(keys, key)
+				_, err := c.Add(context.Background(), &pb.AddRequest{Key: key})
 				if err != nil {
 					log.Fatalf("AddWord RPC failed: %v", err)
 				}
@@ -52,11 +55,17 @@ func main() {
 	}
 	wg.Wait()
 
-	resp, err := c.GetWords(context.Background(), &pb.GetWordsRequest{})
-	if err != nil {
-		log.Fatalf("GetWords RPC failed: %v", err)
+	for _, key := range keys {
+		resp, err := c.Get(context.Background(), &pb.GetRequest{
+			Key:          key,
+			Linearizable: false,
+		})
+		if err != nil {
+			log.Fatalf("GetWords RPC failed: %v", err)
+		}
+
+		fmt.Println(key, "==>", resp.Value, resp.ReadAtIndex)
 	}
-	fmt.Println(resp)
 }
 
 func generateWords() <-chan string {
@@ -76,14 +85,6 @@ const idLen = 20
 
 func randomId() string {
 	b := randomBytesMod(idLen, byte(len(idChars)))
-	for i, c := range b {
-		b[i] = idChars[c]
-	}
-	return string(b)
-}
-
-func randomCity() string {
-	b := randomBytesMod(4, byte(len(idChars)))
 	for i, c := range b {
 		b[i] = idChars[c]
 	}

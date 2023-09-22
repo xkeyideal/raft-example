@@ -16,7 +16,7 @@ import (
 )
 
 type Engine struct {
-	raft       *hraft
+	raft       *raftServer
 	fsm        *fsm.StateMachine
 	grpcServer *grpc.Server
 }
@@ -55,8 +55,8 @@ func NewEngine(raftDir, nodeId, raftAddr, grpcAddr string, raftBootstrap bool) (
 	}
 
 	s := grpc.NewServer(gopts...)
-	pb.RegisterExampleServer(s, service.NewGrpcService(fsm, r.r))
-	raftmanager.Register(s, r.r)
+	pb.RegisterExampleServer(s, service.NewGrpcService(fsm, r))
+	raftmanager.Register(s, r.raft)
 
 	e := &Engine{
 		raft:       r,

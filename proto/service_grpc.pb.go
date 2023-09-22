@@ -19,16 +19,16 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Example_AddWord_FullMethodName  = "/Example/AddWord"
-	Example_GetWords_FullMethodName = "/Example/GetWords"
+	Example_Add_FullMethodName = "/Example/Add"
+	Example_Get_FullMethodName = "/Example/Get"
 )
 
 // ExampleClient is the client API for Example service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ExampleClient interface {
-	AddWord(ctx context.Context, in *AddWordRequest, opts ...grpc.CallOption) (*AddWordResponse, error)
-	GetWords(ctx context.Context, in *GetWordsRequest, opts ...grpc.CallOption) (*GetWordsResponse, error)
+	Add(ctx context.Context, in *AddRequest, opts ...grpc.CallOption) (*AddResponse, error)
+	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
 }
 
 type exampleClient struct {
@@ -39,18 +39,18 @@ func NewExampleClient(cc grpc.ClientConnInterface) ExampleClient {
 	return &exampleClient{cc}
 }
 
-func (c *exampleClient) AddWord(ctx context.Context, in *AddWordRequest, opts ...grpc.CallOption) (*AddWordResponse, error) {
-	out := new(AddWordResponse)
-	err := c.cc.Invoke(ctx, Example_AddWord_FullMethodName, in, out, opts...)
+func (c *exampleClient) Add(ctx context.Context, in *AddRequest, opts ...grpc.CallOption) (*AddResponse, error) {
+	out := new(AddResponse)
+	err := c.cc.Invoke(ctx, Example_Add_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *exampleClient) GetWords(ctx context.Context, in *GetWordsRequest, opts ...grpc.CallOption) (*GetWordsResponse, error) {
-	out := new(GetWordsResponse)
-	err := c.cc.Invoke(ctx, Example_GetWords_FullMethodName, in, out, opts...)
+func (c *exampleClient) Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error) {
+	out := new(GetResponse)
+	err := c.cc.Invoke(ctx, Example_Get_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -61,8 +61,8 @@ func (c *exampleClient) GetWords(ctx context.Context, in *GetWordsRequest, opts 
 // All implementations must embed UnimplementedExampleServer
 // for forward compatibility
 type ExampleServer interface {
-	AddWord(context.Context, *AddWordRequest) (*AddWordResponse, error)
-	GetWords(context.Context, *GetWordsRequest) (*GetWordsResponse, error)
+	Add(context.Context, *AddRequest) (*AddResponse, error)
+	Get(context.Context, *GetRequest) (*GetResponse, error)
 	mustEmbedUnimplementedExampleServer()
 }
 
@@ -70,11 +70,11 @@ type ExampleServer interface {
 type UnimplementedExampleServer struct {
 }
 
-func (UnimplementedExampleServer) AddWord(context.Context, *AddWordRequest) (*AddWordResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method AddWord not implemented")
+func (UnimplementedExampleServer) Add(context.Context, *AddRequest) (*AddResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Add not implemented")
 }
-func (UnimplementedExampleServer) GetWords(context.Context, *GetWordsRequest) (*GetWordsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetWords not implemented")
+func (UnimplementedExampleServer) Get(context.Context, *GetRequest) (*GetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Get not implemented")
 }
 func (UnimplementedExampleServer) mustEmbedUnimplementedExampleServer() {}
 
@@ -89,38 +89,38 @@ func RegisterExampleServer(s grpc.ServiceRegistrar, srv ExampleServer) {
 	s.RegisterService(&Example_ServiceDesc, srv)
 }
 
-func _Example_AddWord_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(AddWordRequest)
+func _Example_Add_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ExampleServer).AddWord(ctx, in)
+		return srv.(ExampleServer).Add(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Example_AddWord_FullMethodName,
+		FullMethod: Example_Add_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExampleServer).AddWord(ctx, req.(*AddWordRequest))
+		return srv.(ExampleServer).Add(ctx, req.(*AddRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Example_GetWords_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetWordsRequest)
+func _Example_Get_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ExampleServer).GetWords(ctx, in)
+		return srv.(ExampleServer).Get(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Example_GetWords_FullMethodName,
+		FullMethod: Example_Get_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExampleServer).GetWords(ctx, req.(*GetWordsRequest))
+		return srv.(ExampleServer).Get(ctx, req.(*GetRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -133,12 +133,12 @@ var Example_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*ExampleServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "AddWord",
-			Handler:    _Example_AddWord_Handler,
+			MethodName: "Add",
+			Handler:    _Example_Add_Handler,
 		},
 		{
-			MethodName: "GetWords",
-			Handler:    _Example_GetWords_Handler,
+			MethodName: "Get",
+			Handler:    _Example_Get_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

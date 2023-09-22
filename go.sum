@@ -384,8 +384,8 @@ github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415/go.mod h1:
 github.com/xeipuuv/gojsonschema v1.2.0/go.mod h1:anYRn/JVcOK2ZgGU+IjEV4nwlhoK5sQluxsYJ78Id3Y=
 github.com/xkeyideal/grpcbalance v1.58.0 h1:ixfM/v1sZtwjoF38llyjmpn7wHGinYrNUsDxUjTf80Y=
 github.com/xkeyideal/grpcbalance v1.58.0/go.mod h1:i8jtmkKLRX3PmK2Vi5U7cKWYYORI7Vn2HdxeeeLMLAQ=
-github.com/xkeyideal/raft-manager v0.0.0-20230918073419-c8b35d896268 h1:1vH9eH2s/QXq2ZYRRlr8mWfoH/HfUEq1BlHgz4AbGic=
-github.com/xkeyideal/raft-manager v0.0.0-20230918073419-c8b35d896268/go.mod h1:AaG9BOn9c3HW9pgr4j92s4ACErh8/Z5snM3/cULrEw4=
+github.com/xkeyideal/raft-manager v1.0.0 h1:/K7d4gDeDRXO0B1XAsPnc8eWMgy55y2DSQBx7V4q+3M=
+github.com/xkeyideal/raft-manager v1.0.0/go.mod h1:AaG9BOn9c3HW9pgr4j92s4ACErh8/Z5snM3/cULrEw4=
 github.com/xkeyideal/raft-pebbledb v1.4.0 h1:o16MYiT/1LEd2yad4EFCfZwIe5CJAwjl0pkRCzOfp4w=
 github.com/xkeyideal/raft-pebbledb v1.4.0/go.mod h1:U416yDG5uEKDlvXgAdVjKJrjGBBnIiGdbt1vPtkKYzU=
 github.com/xordataexchange/crypt v0.0.3-0.20170626215501-b2862e3d0a77/go.mod h1:aYKd//L2LvnjZzWKhF00oedf4jCCReLcmhLdhm1A27Q=

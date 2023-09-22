@@ -5,23 +5,25 @@ option go_package = ".;proto";
 // protoc -I ./proto --go_out=./proto --go-grpc_out=./proto ./proto/*.proto
 
 service Example {
-	rpc AddWord(AddWordRequest) returns (AddWordResponse) {}
-	rpc GetWords(GetWordsRequest) returns (GetWordsResponse) {}
+	rpc Add(AddRequest) returns (AddResponse) {}
+	rpc Get(GetRequest) returns (GetResponse) {}
 }
 
-message AddWordRequest {
-	string word = 1;
+message AddRequest {
+	string key = 1;
+	string val = 2;
 }
 
-message AddWordResponse {
+message AddResponse {
 	uint64 commit_index = 1;
 }
 
-message GetWordsRequest {
+message GetRequest {
 	string key = 1;
+	bool linearizable = 2;
 }
 
-message GetWordsResponse {
+message GetResponse {
 	uint64 read_at_index = 1;
 	string value = 2;
 }

@@ -17,16 +17,18 @@ import (
 
 const (
 	barrierWriteTimeout = 2 * time.Minute
+	grpcConnectTimeout  = 3 * time.Second
 )
 
 type raftServer struct {
-	store  *fsm.StateMachine
-	raft   *raft.Raft
-	raftdb *pebbledb.PebbleStore
+	raftAddr string
+	store    *fsm.StateMachine
+	raft     *raft.Raft
+	raftdb   *pebbledb.PebbleStore
 
 	// raftNotifyCh is set up by setupRaft() and ensures that we get reliable leader
 	// transition notifications from the Raft layer.
-	raftNotifyCh <-chan bool
+	raftNotifyCh chan bool
 
 	// readyForConsistentReads is used to track when the leader server is
 	// ready to serve consistent reads, after it has applied its initial
@@ -38,8 +40,9 @@ type raftServer struct {
 
 func newRaft(baseDir, nodeId, raftAddr string, rfsm *fsm.StateMachine, raftBootstrap bool) (*raftServer, error) {
 	s := &raftServer{
+		raftAddr:     raftAddr,
 		store:        rfsm,
-		raftNotifyCh: make(<-chan bool, 10),
+		raftNotifyCh: make(chan bool, 10),
 		shutdownCh:   make(chan struct{}),
 	}
 
@@ -56,6 +59,7 @@ func newRaft(baseDir, nodeId, raftAddr string, rfsm *fsm.StateMachine, raftBoots
 		LeaderLeaseTimeout: 500 * time.Millisecond,
 		LogLevel:           hclog.Warn.String(),
 		LocalID:            raft.ServerID(nodeId),
+		NotifyCh:           s.raftNotifyCh,
 	}
 
 	raftdb, err := pebbledb.NewPebbleStore(filepath.Join(baseDir, "raftdb"), &fsm.Logger{}, pebbledb.DefaultPebbleDBConfig())

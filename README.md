@@ -40,6 +40,41 @@ You can see all this happening in `NewRaft()` in `engine/raft.go`.
 
 See `fsm/fsm.go`. You'll need to implement a `raft.FSM`, and you probably want a gRPC RPC interface.
 
+## Consistent
+
+The `Apply` method of Hashicorp Raft must be called by leader.
+
+```go
+// Apply is used to apply a command to the FSM in a highly consistent
+// manner. This returns a future that can be used to wait on the application.
+// An optional timeout can be provided to limit the amount of time we wait
+// for the command to be started. This must be run on the leader or it
+// will fail.
+func (r *Raft) Apply(cmd []byte, timeout time.Duration) ApplyFuture {
+	return r.ApplyLog(Log{Data: cmd}, timeout)
+}
+```
+
+So we need forward `Apply` request to the leader. Like the [Consul](https://github.com/hashicorp/consul) KV https://github.com/hashicorp/consul/blob/main/agent/consul/kvs_endpoint.go#L100 by RPC.
+
+We must know the leader RPC address not raft address when want to forward request to leader.
+
+We can use gossip protocol propagate per node RPC, raft address infos and so on. Best practices of [Gossip](https://github.com/xkeyideal/mraft/blob/master/gossip/gossip.go) by [Memberlist](https://github.com/hashicorp/memberlist)
+
+The Raft Example use constant map, you can modify it in https://github.com/xkeyideal/raft-example/blob/master/engine/kv.go
+
+```go
+var (
+	server_lookup = map[string]string{
+		"127.0.0.1:50051": "127.0.0.1:40051",
+		"127.0.0.1:50052": "127.0.0.1:40052",
+		"127.0.0.1:50053": "127.0.0.1:40051",
+	}
+)
+```
+
+
+
 ## Inspired
 
 [raft-grpc-example](https://github.com/Jille/raft-grpc-example)

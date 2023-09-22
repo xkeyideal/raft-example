@@ -84,3 +84,4 @@ internal/gossip/main/main
 
 ./app
 main
+cmd/cmd

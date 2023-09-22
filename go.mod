@@ -4,7 +4,9 @@ go 1.21.1
 
 require (
 	github.com/cockroachdb/pebble v0.0.0-20230914214336-22fbb69a4835
+	github.com/hashicorp/go-hclog v1.5.0
 	github.com/hashicorp/raft v1.5.0
+	github.com/iancoleman/strcase v0.3.0
 	github.com/xkeyideal/grpcbalance v1.58.0
 	github.com/xkeyideal/raft-manager v1.0.0
 	github.com/xkeyideal/raft-pebbledb v1.4.0
@@ -28,7 +30,6 @@ require (
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 // indirect
-	github.com/hashicorp/go-hclog v1.5.0 // indirect
 	github.com/hashicorp/go-immutable-radix v1.0.0 // indirect
 	github.com/hashicorp/go-msgpack v0.5.5 // indirect
 	github.com/hashicorp/golang-lru v0.5.1 // indirect

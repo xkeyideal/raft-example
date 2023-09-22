@@ -19,6 +19,7 @@ const (
 
 var (
 	ErrNotReadyForConsistentReads = errors.New("Not ready to serve consistent reads")
+	ErrNoLeader                   = errors.New("No cluster leader")
 )
 
 // ConsistentRead is used to ensure we do not perform a stale

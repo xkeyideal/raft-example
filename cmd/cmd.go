@@ -6,10 +6,8 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"fmt"
 	"io"
 	"log"
-	"sync"
 	"time"
 
 	"github.com/xkeyideal/grpcbalance/grpclient"
@@ -35,25 +33,20 @@ func main() {
 
 	c := pb.NewExampleClient(client.ActiveConnection())
 
-	ch := generateWords()
-
-	var wg sync.WaitGroup
-
 	keys := []string{}
 	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for key := range ch {
-				keys = append(keys, key)
-				_, err := c.Add(context.Background(), &pb.AddRequest{Key: key})
-				if err != nil {
-					log.Fatalf("AddWord RPC failed: %v", err)
-				}
-			}
-		}()
+		key := randomId(10)
+		val := randomId(32)
+		keys = append(keys, key)
+		resp, err := c.Add(context.Background(), &pb.AddRequest{Key: key, Val: val})
+		if err != nil {
+			log.Fatalf("AddWord RPC failed: %v", err)
+		}
+
+		log.Println("Apply:", key, val, resp.CommitIndex)
 	}
-	wg.Wait()
+
+	time.Sleep(2 * time.Second)
 
 	for _, key := range keys {
 		resp, err := c.Get(context.Background(), &pb.GetRequest{
@@ -64,26 +57,13 @@ func main() {
 			log.Fatalf("GetWords RPC failed: %v", err)
 		}
 
-		fmt.Println(key, "==>", resp.Value, resp.ReadAtIndex)
+		log.Println("Query:", key, "==>", resp.Value, resp.ReadAtIndex)
 	}
-}
-
-func generateWords() <-chan string {
-	ch := make(chan string, 1)
-	go func() {
-		for {
-			ch <- randomId()
-		}
-	}()
-
-	return ch
 }
 
 var idChars = []byte("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789")
 
-const idLen = 20
-
-func randomId() string {
+func randomId(idLen int) string {
 	b := randomBytesMod(idLen, byte(len(idChars)))
 	for i, c := range b {
 		b[i] = idChars[c]

@@ -10,6 +10,8 @@ import (
 const (
 	rpcHoldTimeout = 5 * time.Second
 
+	raftApplyTimeout = 3 * time.Second
+
 	// JitterFraction is a the limit to the amount of jitter we apply
 	// to a user specified MaxQueryTime. We divide the specified time by
 	// the fraction. So 16 == 6.25% limit of jitter. This same fraction

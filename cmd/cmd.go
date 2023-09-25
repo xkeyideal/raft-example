@@ -48,16 +48,23 @@ func main() {
 
 	time.Sleep(2 * time.Second)
 
-	for _, key := range keys {
+	log.Println("================== KV WRITE TEST DONE ==================")
+
+	for i, key := range keys {
+		linearizable := false
+		if i%3 == 0 {
+			linearizable = true
+		}
+
 		resp, err := c.Get(context.Background(), &pb.GetRequest{
 			Key:          key,
-			Linearizable: false,
+			Linearizable: linearizable,
 		})
 		if err != nil {
 			log.Fatalf("GetWords RPC failed: %v", err)
 		}
 
-		log.Println("Query:", key, "==>", resp.Value, resp.ReadAtIndex)
+		log.Println("Query:", linearizable, key, "==>", resp.Value, resp.ReadAtIndex)
 	}
 }
 

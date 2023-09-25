@@ -21,12 +21,21 @@ func NewStateMachine(raftAddr string, nodeId string, s *Store) *StateMachine {
 		raftAddr: raftAddr,
 		nodeId:   nodeId,
 		store:    s,
+		fsmIndex: atomic.NewUint64(0),
 	}
 }
 
 func (r *StateMachine) UpdateFsmIndex(index uint64) {
 	if r.fsmIndex.Load() < index {
 		r.fsmIndex.Store(index)
+	}
+}
+
+func (r *StateMachine) ReadLocal(key []byte) *CommandResponse {
+	val, err := r.store.query(key)
+	return &CommandResponse{
+		Val:   val,
+		Error: err,
 	}
 }
 

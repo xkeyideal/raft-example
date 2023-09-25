@@ -30,13 +30,8 @@ type CommandResponse struct {
 	Error error  `json:"error"`
 }
 
-type commandTmp struct {
-	Type    CommandType     `json:"type"`
-	Payload json.RawMessage `json:"payload"`
-}
-
 func (store *Store) applyCommand(data []byte) *CommandResponse {
-	c := &commandTmp{}
+	c := &Command{}
 	err := json.Unmarshal(data, c)
 	if err != nil {
 		return &CommandResponse{

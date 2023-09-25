@@ -61,7 +61,7 @@ We must know the leader RPC address not raft address when want to forward reques
 
 We can use gossip protocol propagate per node RPC, raft address infos and so on. Best practices of [Gossip](https://github.com/xkeyideal/mraft/blob/master/gossip/gossip.go) by [Memberlist](https://github.com/hashicorp/memberlist)
 
-The Raft Example use constant map, you can modify it in https://github.com/xkeyideal/raft-example/blob/master/engine/kv.go
+The Raft Example use constant map, you can modify it in https://github.com/xkeyideal/raft-example/blob/master/service/service.go
 
 ```go
 var (

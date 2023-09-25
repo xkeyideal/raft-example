@@ -384,8 +384,8 @@ github.com/valyala/tcplisten v0.0.0-20161114210144-ceec8f93295a/go.mod h1:v3UYOV
 github.com/xeipuuv/gojsonpointer v0.0.0-20180127040702-4e3ac2762d5f/go.mod h1:N2zxlSyiKSe5eX1tZViRH5QA0qijqEDrYZiPEAiq3wU=
 github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415/go.mod h1:GwrjFmJcFw6At/Gs6z4yjiIwzuJ1/+UwLxMQDVQXShQ=
 github.com/xeipuuv/gojsonschema v1.2.0/go.mod h1:anYRn/JVcOK2ZgGU+IjEV4nwlhoK5sQluxsYJ78Id3Y=
-github.com/xkeyideal/grpcbalance v1.58.0 h1:ixfM/v1sZtwjoF38llyjmpn7wHGinYrNUsDxUjTf80Y=
-github.com/xkeyideal/grpcbalance v1.58.0/go.mod h1:i8jtmkKLRX3PmK2Vi5U7cKWYYORI7Vn2HdxeeeLMLAQ=
+github.com/xkeyideal/grpcbalance v1.58.1 h1:FWvD51yVSrDpKnuxpxCl2T4+BvbqMnqOjYbwZknATAU=
+github.com/xkeyideal/grpcbalance v1.58.1/go.mod h1:i8jtmkKLRX3PmK2Vi5U7cKWYYORI7Vn2HdxeeeLMLAQ=
 github.com/xkeyideal/raft-manager v1.0.0 h1:/K7d4gDeDRXO0B1XAsPnc8eWMgy55y2DSQBx7V4q+3M=
 github.com/xkeyideal/raft-manager v1.0.0/go.mod h1:AaG9BOn9c3HW9pgr4j92s4ACErh8/Z5snM3/cULrEw4=
 github.com/xkeyideal/raft-pebbledb v1.4.0 h1:o16MYiT/1LEd2yad4EFCfZwIe5CJAwjl0pkRCzOfp4w=

@@ -7,7 +7,7 @@ require (
 	github.com/hashicorp/go-hclog v1.5.0
 	github.com/hashicorp/raft v1.5.0
 	github.com/iancoleman/strcase v0.3.0
-	github.com/xkeyideal/grpcbalance v1.58.0
+	github.com/xkeyideal/grpcbalance v1.58.1
 	github.com/xkeyideal/raft-manager v1.0.0
 	github.com/xkeyideal/raft-pebbledb v1.4.0
 	go.uber.org/atomic v1.11.0

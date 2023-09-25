@@ -43,15 +43,27 @@ func (s *raftServer) Apply(key, val string, timeout time.Duration) (uint64, erro
 	}
 
 	payload := fsm.SetPayload{
-		Key:   key,
-		Value: val,
+		Key:   []byte(key),
+		Value: []byte(val),
 	}
 
 	b, _ := json.Marshal(payload)
 
-	f := s.raft.Apply(b, timeout)
+	c := &fsm.Command{
+		Type:    fsm.Insert,
+		Payload: b,
+	}
+
+	data, _ := json.Marshal(c)
+
+	f := s.raft.Apply(data, timeout)
 	if err := f.Error(); err != nil {
 		return 0, fmt.Errorf("Apply %s: %s", s.raftAddr, err.Error())
+	}
+
+	res := f.Response().(*fsm.CommandResponse)
+	if res.Error != nil {
+		return 0, res.Error
 	}
 
 	return f.Index(), nil
@@ -75,12 +87,24 @@ func (s *raftServer) Query(key []byte, consistent bool, timeout time.Duration) (
 		}
 	}
 
-	val, err := s.store.Lookup(key)
-	if err != nil {
-		return 0, nil, fmt.Errorf("Lookup %s: %s", s.raftAddr, err.Error())
+	c := &fsm.Command{
+		Type:    fsm.Query,
+		Payload: key,
 	}
 
-	return s.raft.AppliedIndex(), val, nil
+	data, _ := json.Marshal(c)
+
+	f := s.raft.Apply(data, timeout)
+	if err := f.Error(); err != nil {
+		return 0, nil, fmt.Errorf("Apply %s: %s", s.raftAddr, err.Error())
+	}
+
+	res := f.Response().(*fsm.CommandResponse)
+	if res.Error != nil {
+		return 0, nil, res.Error
+	}
+
+	return f.Index(), res.Val, nil
 }
 
 // forwardRequestToLeader is used to potentially forward an RPC request to a remote DC or
@@ -171,7 +195,7 @@ func (s *raftServer) getLeader() (bool, raft.ServerAddress, error) {
 	}
 
 	// Get the leader
-	leader := s.raft.Leader()
+	leader, _ := s.raft.LeaderWithID()
 	if leader == "" {
 		return false, "", ErrNoLeader
 	}

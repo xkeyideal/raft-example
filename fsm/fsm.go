@@ -1,9 +1,9 @@
 package fsm
 
 import (
-	"encoding/json"
-	"fmt"
 	"io"
+
+	"go.uber.org/atomic"
 
 	"github.com/cockroachdb/pebble"
 	"github.com/hashicorp/raft"
@@ -12,6 +12,7 @@ import (
 type StateMachine struct {
 	raftAddr string
 	nodeId   string
+	fsmIndex *atomic.Uint64
 	store    *Store
 }
 
@@ -23,9 +24,10 @@ func NewStateMachine(raftAddr string, nodeId string, s *Store) *StateMachine {
 	}
 }
 
-type SetPayload struct {
-	Key   string `json:"key"`
-	Value string `json:"val"`
+func (r *StateMachine) UpdateFsmIndex(index uint64) {
+	if r.fsmIndex.Load() < index {
+		r.fsmIndex.Store(index)
+	}
 }
 
 // Apply is called once a log entry is committed by a majority of the cluster.
@@ -39,43 +41,9 @@ func (r *StateMachine) Apply(log *raft.Log) any {
 		return nil
 	}
 
-	switch log.Type {
-	case raft.LogCommand:
-		var sp SetPayload
-		err := json.Unmarshal(log.Data, &sp)
-		if err != nil {
-			return fmt.Errorf("Could not parse payload: %s", err)
-		}
+	r.fsmIndex.Store(log.Index)
 
-		// idx := log.Index
-		// idxByte := make([]byte, 8)
-		// binary.BigEndian.PutUint64(idxByte, idx)
-
-		batch := r.store.batch()
-		defer batch.Close()
-
-		cf := r.store.getColumnFamily(cf_default)
-		batch.Set(r.store.buildColumnFamilyKey(cf, []byte(sp.Key)), []byte(sp.Value), pebble.Sync)
-		if err := r.store.write(batch); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (r *StateMachine) Lookup(key []byte) ([]byte, error) {
-	if r.store.isclosed() {
-		return nil, pebble.ErrClosed
-	}
-
-	cf := r.store.getColumnFamily(cf_default)
-	d, err := r.store.getBytes(r.store.buildColumnFamilyKey(cf, key))
-	if err != nil {
-		return nil, err
-	}
-
-	return d, nil
+	return r.store.applyCommand(log.Data)
 }
 
 // Snapshot returns an FSMSnapshot used to: support log compaction, to

@@ -18,6 +18,7 @@ import (
 const (
 	barrierWriteTimeout = 2 * time.Minute
 	grpcConnectTimeout  = 3 * time.Second
+	appliedWaitDelay    = 100 * time.Millisecond
 )
 
 type raftServer struct {
@@ -108,6 +109,8 @@ func newRaft(baseDir, nodeId, raftAddr string, rfsm *fsm.StateMachine, raftBoots
 			return nil, fmt.Errorf("raft.Raft.BootstrapCluster: %v", err)
 		}
 	}
+
+	s.store.UpdateFsmIndex(s.raft.AppliedIndex())
 
 	go s.monitorLeadership()
 

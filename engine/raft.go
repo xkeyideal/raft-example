@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ const (
 	barrierWriteTimeout = 2 * time.Minute
 	grpcConnectTimeout  = 3 * time.Second
 	appliedWaitDelay    = 100 * time.Millisecond
+	observerChanLen     = 50
 )
 
 type raftServer struct {
@@ -27,8 +29,10 @@ type raftServer struct {
 	raft     *raft.Raft
 	raftdb   *pebbledb.PebbleStore
 
-	// raftNotifyCh is set up by setupRaft() and ensures that we get reliable leader
+	// raftNotifyCh ensures that we get reliable leader
 	// transition notifications from the Raft layer.
+	// just leader node receive the notify channel
+	// if want per node can receive leader changes can use RegisterObserver
 	raftNotifyCh chan bool
 
 	// readyForConsistentReads is used to track when the leader server is
@@ -37,6 +41,10 @@ type raftServer struct {
 	readyForConsistentReads int32
 
 	shutdownCh chan struct{}
+
+	// Raft changes observer
+	observerChan chan raft.Observation
+	observer     *raft.Observer
 }
 
 func newRaft(baseDir, nodeId, raftAddr string, rfsm *fsm.StateMachine, raftBootstrap bool) (*raftServer, error) {
@@ -93,6 +101,19 @@ func newRaft(baseDir, nodeId, raftAddr string, rfsm *fsm.StateMachine, raftBoots
 
 	s.raft = r
 
+	// registers an Observer with raft in order to receive updates
+	// about leader changes, in order to keep the grpc resolver up to date for leader forwarding.
+	s.observerChan = make(chan raft.Observation, observerChanLen)
+	s.observer = raft.NewObserver(s.observerChan, false, func(o *raft.Observation) bool {
+		_, isLeaderChange := o.Data.(raft.LeaderObservation)
+		_, isFailedHeartBeat := o.Data.(raft.FailedHeartbeatObservation)
+		return isLeaderChange || isFailedHeartBeat
+	})
+
+	// Register and listen for leader changes.
+	s.raft.RegisterObserver(s.observer)
+	s.observe()
+
 	if raftBootstrap {
 		cfg := raft.Configuration{
 			Servers: []raft.Server{
@@ -117,6 +138,32 @@ func newRaft(baseDir, nodeId, raftAddr string, rfsm *fsm.StateMachine, raftBoots
 	return s, nil
 }
 
+// DeregisterObserver deregisters an observer of Raft events
+func (s *raftServer) DeregisterObserver(o *raft.Observer) {
+	s.raft.DeregisterObserver(o)
+}
+
+func (s *raftServer) observe() {
+	go func() {
+		for {
+			select {
+			case o := <-s.observerChan:
+				switch signal := o.Data.(type) {
+				case raft.FailedHeartbeatObservation:
+					log.Println("FailedHeartbeatObservation", signal)
+				case raft.LeaderObservation:
+					log.Println("LeaderObservation", signal)
+					// s.selfLeaderChange(signal.LeaderID == raft.ServerID(s.raftID))
+				}
+
+			case <-s.shutdownCh:
+				s.raft.DeregisterObserver(s.observer)
+				return
+			}
+		}
+	}()
+}
+
 // refer: https://github.com/hashicorp/consul/blob/main/agent/consul/leader.go#L71
 // monitorLeadership is used to monitor if we acquire or lose our role
 // as the leader in the Raft cluster. There is some work the leader is
@@ -125,6 +172,7 @@ func (s *raftServer) monitorLeadership() {
 	for {
 		select {
 		case isLeader := <-s.raftNotifyCh:
+			log.Println("monitorLeadership", isLeader)
 			switch {
 			case isLeader:
 				s.leaderLoop()

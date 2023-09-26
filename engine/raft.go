@@ -6,8 +6,9 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"sync/atomic"
 	"time"
+
+	"go.uber.org/atomic"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/raft"
@@ -21,13 +22,19 @@ const (
 	grpcConnectTimeout  = 3 * time.Second
 	appliedWaitDelay    = 100 * time.Millisecond
 	observerChanLen     = 50
+
+	raftDBPath = "raftdb"
 )
 
 type raftServer struct {
+	raftId   string
 	raftAddr string
-	store    *fsm.StateMachine
-	raft     *raft.Raft
-	raftdb   *pebbledb.PebbleStore
+	raftDir  string
+
+	dbAppliedIndex *atomic.Uint64
+	store          *fsm.StateMachine
+	raft           *raft.Raft
+	raftdb         *pebbledb.PebbleStore
 
 	// raftNotifyCh ensures that we get reliable leader
 	// transition notifications from the Raft layer.
@@ -38,7 +45,7 @@ type raftServer struct {
 	// readyForConsistentReads is used to track when the leader server is
 	// ready to serve consistent reads, after it has applied its initial
 	// barrier. This is updated atomically.
-	readyForConsistentReads int32
+	readyForConsistentReads *atomic.Int32
 
 	shutdownCh chan struct{}
 
@@ -49,10 +56,14 @@ type raftServer struct {
 
 func newRaft(baseDir, nodeId, raftAddr string, rfsm *fsm.StateMachine, raftBootstrap bool) (*raftServer, error) {
 	s := &raftServer{
-		raftAddr:     raftAddr,
-		store:        rfsm,
-		raftNotifyCh: make(chan bool, 10),
-		shutdownCh:   make(chan struct{}),
+		raftId:                  nodeId,
+		raftAddr:                raftAddr,
+		raftDir:                 baseDir,
+		dbAppliedIndex:          atomic.NewUint64(0),
+		readyForConsistentReads: atomic.NewInt32(0),
+		store:                   rfsm,
+		raftNotifyCh:            make(chan bool, 10),
+		shutdownCh:              make(chan struct{}),
 	}
 
 	cfg := &raft.Config{
@@ -71,9 +82,9 @@ func newRaft(baseDir, nodeId, raftAddr string, rfsm *fsm.StateMachine, raftBoots
 		NotifyCh:           s.raftNotifyCh,
 	}
 
-	raftdb, err := pebbledb.NewPebbleStore(filepath.Join(baseDir, "raftdb"), &fsm.Logger{}, pebbledb.DefaultPebbleDBConfig())
+	raftdb, err := pebbledb.NewPebbleStore(filepath.Join(baseDir, raftDBPath), &fsm.Logger{}, pebbledb.DefaultPebbleDBConfig())
 	if err != nil {
-		return nil, fmt.Errorf(`pebbledb.NewPebbleStore(%q): %v`, filepath.Join(baseDir, "raftdb"), err)
+		return nil, fmt.Errorf(`pebbledb.NewPebbleStore(%q): %v`, filepath.Join(baseDir, raftDBPath), err)
 	}
 
 	s.raftdb = raftdb
@@ -183,6 +194,31 @@ func (s *raftServer) monitorLeadership() {
 	}
 }
 
+// logSize returns the size of the Raft log on disk.
+func (s *raftServer) logSize() (int64, error) {
+	fi, err := os.Stat(filepath.Join(s.raftDir, raftDBPath))
+	if err != nil {
+		return 0, err
+	}
+	return fi.Size(), nil
+}
+
+// IsVoter returns true if the current node is a voter in the cluster. If there
+// is no reference to the current node in the current cluster configuration then
+// false will also be returned.
+func (s *raftServer) IsVoter() (bool, error) {
+	cfg := s.raft.GetConfiguration()
+	if err := cfg.Error(); err != nil {
+		return false, err
+	}
+	for _, srv := range cfg.Configuration().Servers {
+		if srv.ID == raft.ServerID(s.raftId) {
+			return srv.Suffrage == raft.Voter, nil
+		}
+	}
+	return false, nil
+}
+
 func (s *raftServer) leaderLoop() {
 	// Apply a raft barrier to ensure our FSM is caught up
 	barrier := s.raft.Barrier(barrierWriteTimeout)
@@ -195,17 +231,17 @@ func (s *raftServer) leaderLoop() {
 
 // Atomically sets a readiness state flag when leadership is obtained, to indicate that server is past its barrier write
 func (s *raftServer) setConsistentReadReady() {
-	atomic.StoreInt32(&s.readyForConsistentReads, 1)
+	s.readyForConsistentReads.Store(1)
 }
 
 // Atomically reset readiness state flag on leadership revoke
 func (s *raftServer) resetConsistentReadReady() {
-	atomic.StoreInt32(&s.readyForConsistentReads, 0)
+	s.readyForConsistentReads.Store(0)
 }
 
 // Returns true if this server is ready to serve consistent reads
 func (s *raftServer) isReadyForConsistentReads() bool {
-	return atomic.LoadInt32(&s.readyForConsistentReads) == 1
+	return s.readyForConsistentReads.Load() == 1
 }
 
 func (s *raftServer) close() {

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -39,6 +40,7 @@ func ctxTimeout(ctx context.Context) time.Duration {
 type KV interface {
 	Apply(ctx context.Context, key, val string) (uint64, error)
 	Query(ctx context.Context, key []byte, consistent bool) (uint64, []byte, error)
+	Stats() (map[string]any, error)
 	GetLeader() (bool, raft.ServerAddress, error)
 }
 
@@ -96,6 +98,16 @@ func (r *GRPCService) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetRespo
 		Value:       string(val),
 		ReadAtIndex: index,
 	}, nil
+}
+
+func (r *GRPCService) Stat(ctx context.Context, req *pb.StatRequest) (*pb.StatResponse, error) {
+	stats, err := r.kv.Stats()
+	if err != nil {
+		return nil, err
+	}
+
+	b, _ := json.MarshalIndent(stats, "", "    ")
+	return &pb.StatResponse{Stats: string(b)}, nil
 }
 
 // forwardRequestToLeader is used to potentially forward an RPC request to a remote DC or

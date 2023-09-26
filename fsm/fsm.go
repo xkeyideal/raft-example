@@ -25,6 +25,25 @@ func NewStateMachine(raftAddr string, nodeId string, s *Store) *StateMachine {
 	}
 }
 
+func (r *StateMachine) Stats() (map[string]any, error) {
+	dirSz, err := dirSize(r.store.baseDir)
+	if err != nil {
+		return nil, err
+	}
+
+	stats := map[string]any{
+		"fsm_index":    r.GetFsmIndex(),
+		"fsm_dir":      r.store.baseDir,
+		"fsm_dir_size": dirSz,
+	}
+
+	return stats, nil
+}
+
+func (r *StateMachine) GetFsmIndex() uint64 {
+	return r.fsmIndex.Load()
+}
+
 func (r *StateMachine) UpdateFsmIndex(index uint64) {
 	if r.fsmIndex.Load() < index {
 		r.fsmIndex.Store(index)

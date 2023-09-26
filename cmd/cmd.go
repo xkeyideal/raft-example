@@ -34,7 +34,7 @@ func main() {
 	c := pb.NewExampleClient(client.ActiveConnection())
 
 	keys := []string{}
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 5; i++ {
 		key := randomId(10)
 		val := randomId(32)
 		keys = append(keys, key)
@@ -66,6 +66,15 @@ func main() {
 
 		log.Println("Query:", linearizable, key, "==>", resp.Value, resp.ReadAtIndex)
 	}
+
+	log.Println("================== KV READ TEST DONE ==================")
+
+	stats, err := c.Stat(context.Background(), &pb.StatRequest{})
+	if err != nil {
+		log.Fatalf("Stat RPC failed: %v", err)
+	}
+
+	log.Println(stats.Stats)
 }
 
 var idChars = []byte("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789")

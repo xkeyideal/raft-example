@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
 	"time"
 
 	"github.com/hashicorp/raft"
@@ -51,6 +55,8 @@ func (s *raftServer) Apply(ctx context.Context, key, val string) (uint64, error)
 		return 0, fmt.Errorf("Apply %s: %s", s.raftAddr, err.Error())
 	}
 
+	s.dbAppliedIndex.Store(f.Index())
+
 	res := f.Response().(*fsm.CommandResponse)
 	if res.Error != nil {
 		return 0, res.Error
@@ -91,6 +97,8 @@ func (s *raftServer) Query(ctx context.Context, key []byte, consistent bool) (ui
 		return 0, nil, fmt.Errorf("Apply %s: %s", s.raftAddr, err.Error())
 	}
 
+	s.dbAppliedIndex.Store(f.Index())
+
 	res := f.Response().(*fsm.CommandResponse)
 	if res.Error != nil {
 		return 0, nil, res.Error
@@ -117,4 +125,113 @@ func (s *raftServer) GetLeader() (bool, raft.ServerAddress, error) {
 // IsLeader checks if this server is the cluster leader
 func (s *raftServer) IsLeader() bool {
 	return s.raft.State() == raft.Leader
+}
+
+// Stats returns stats for the store.
+func (s *raftServer) Stats() (map[string]any, error) {
+	nodes, err := s.Nodes()
+	if err != nil {
+		return nil, err
+	}
+
+	leaderAddr, leaderID := s.raft.LeaderWithID()
+
+	// Perform type-conversion to actual numbers where possible.
+	raftStats := make(map[string]any)
+	for k, v := range s.raft.Stats() {
+		if s, err := strconv.ParseInt(v, 10, 64); err != nil {
+			raftStats[k] = v
+		} else {
+			raftStats[k] = s
+		}
+	}
+	raftStats["log_size"], err = s.logSize()
+	if err != nil {
+		return nil, err
+	}
+	raftStats["voter"], err = s.IsVoter()
+	if err != nil {
+		return nil, err
+	}
+
+	dirSz, err := dirSize(s.raftDir)
+	if err != nil {
+		return nil, err
+	}
+
+	fsmStats, err := s.store.Stats()
+	if err != nil {
+		return nil, err
+	}
+
+	stats := map[string]any{
+		"node_id":            s.raftId,
+		"raft":               raftStats,
+		"db_applied_index":   s.dbAppliedIndex.Load(),
+		"last_applied_index": s.raft.AppliedIndex(),
+		"addr":               s.raftAddr,
+		"leader": map[string]string{
+			"node_id": string(leaderID),
+			"addr":    string(leaderAddr),
+		},
+		"observer": map[string]uint64{
+			"observed": s.observer.GetNumObserved(),
+			"dropped":  s.observer.GetNumDropped(),
+		},
+		"nodes":         nodes,
+		"raft_dir":      s.raftDir,
+		"raft_dir_size": dirSz,
+		"fsm":           fsmStats,
+	}
+	return stats, nil
+}
+
+// Nodes returns the slice of nodes in the cluster, sorted by ID ascending.
+func (s *raftServer) Nodes() ([]*Server, error) {
+	f := s.raft.GetConfiguration()
+	if f.Error() != nil {
+		return nil, f.Error()
+	}
+
+	rs := f.Configuration().Servers
+	servers := make([]*Server, len(rs))
+	for i := range rs {
+		servers[i] = &Server{
+			ID:       string(rs[i].ID),
+			Addr:     string(rs[i].Address),
+			Suffrage: rs[i].Suffrage.String(),
+		}
+	}
+
+	sort.Slice(servers, func(i, j int) bool {
+		return servers[i].ID < servers[j].ID
+	})
+
+	return servers, nil
+}
+
+type Server struct {
+	ID       string `json:"id,omitempty"`
+	Addr     string `json:"addr,omitempty"`
+	Suffrage string `json:"suffrage,omitempty"`
+}
+
+// dirSize returns the total size of all files in the given directory
+func dirSize(path string) (int64, error) {
+	var size int64
+	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			// If the file doesn't exist, we can ignore it. Snapshot files might
+			// disappear during walking.
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if !info.IsDir() {
+			size += info.Size()
+		}
+		return err
+	})
+	return size, err
 }

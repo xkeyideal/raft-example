@@ -78,6 +78,8 @@ var (
 ## Inspired
 
 [raft-grpc-example](https://github.com/Jille/raft-grpc-example)
+[rsqlit](github.com/rqlite/rqlite) is an easy-to-use, lightweight, distributed relational database, which uses SQLite as its storage engine.
+[consul](github.com/hashicorp/consul)
 
 ## License
 raft-example is under the BSD 2-Clause License. See the LICENSE file for details.

@@ -73,13 +73,57 @@ var (
 )
 ```
 
+## Raft Config Parameters
 
+1. SnapshotInterval & SnapshotThreshold, `SnapshotInterval` controls how often we check if we should perform a snapshot.
+   `SnapshotThreshold` controls how many outstanding logs there must be before we perform a snapshot.
+   ```go
+    // runSnapshots is a long running goroutine used to manage taking
+	// new snapshots of the FSM. It runs in parallel to the FSM and
+	// main goroutines, so that snapshots do not block normal operation.
+	func (r *Raft) runSnapshots() {
+		for {
+			select {
+			case <-randomTimeout(r.config().SnapshotInterval):
+				// Check if we should snapshot
+				if !r.shouldSnapshot() {
+					continue
+				}
+
+				// Trigger a snapshot
+				if _, err := r.takeSnapshot(); err != nil {
+					r.logger.Error("failed to take snapshot", "error", err)
+				}
+
+			case future := <-r.userSnapshotCh:
+				// User-triggered, run immediately
+				id, err := r.takeSnapshot()
+				if err != nil {
+					r.logger.Error("failed to take snapshot", "error", err)
+				} else {
+					future.opener = func() (*SnapshotMeta, io.ReadCloser, error) {
+						return r.snapshots.Open(id)
+					}
+				}
+				future.respond(err)
+
+			case <-r.shutdownCh:
+				return
+			}
+		}
+	}
+   ```
+2. HeartbeatTimeout, the time in follower state without contact from a leader before we attempt an election.
+3. ElectionTimeout, the time in candidate state without contact from a leader before we attempt an election.
+4. TrailingLogs, controls how many logs we leave after a snapshot. This is used so that we can quickly replay logs on a follower instead of being forced to send an entire snapshot.
+
+So the most critical parameters of raft for followers sync logs are SnapshotThreshold and TrailingLogs, and the value of SnapshotThreshold should be less than the value of TrailingLogs.
 
 ## Inspired
 
 [raft-grpc-example](https://github.com/Jille/raft-grpc-example)
 
-[rsqlit](github.com/rqlite/rqlite) is an easy-to-use, lightweight, distributed relational database, which uses SQLite as its storage engine.
+[rqlite](github.com/rqlite/rqlite) is an easy-to-use, lightweight, distributed relational database, which uses SQLite as its storage engine.
 
 [consul](github.com/hashicorp/consul)
 

@@ -12,17 +12,17 @@ GRPC Server port: 40051, 40052, 40053, 40054 ...
 RAFT Server port: 50051, 50052, 50053, 50054 ...
 
 ```shell
-$ mkdir /Users/xkey/test
-$ mkdir /Users/xkey/test/node{A,B,C}
-$ ./raft-example --raft_bootstrap --raft_id=nodeA --grpc_addr=localhost:40051 --raft_addr=localhost:50051 --raft_data_dir /Users/xkey/test
-$ ./raft-example --raft_id=nodeB --grpc_addr=localhost:40052 --raft_addr=localhost:50052 --raft_data_dir /Users/xkey/test
-$ ./raft-example --raft_id=nodeC --grpc_addr=localhost:40053 --raft_addr=localhost:50053 --raft_data_dir /Users/xkey/test
+$ mkdir /tmp/test
+$ mkdir /tmp/test/node{A,B,C}
+$ ./raft-example --raft_bootstrap --raft_id=nodeA --grpc_addr=localhost:40051 --raft_addr=localhost:50051 --raft_data_dir /tmp/test
+$ ./raft-example --raft_id=nodeB --grpc_addr=localhost:40052 --raft_addr=localhost:50052 --raft_data_dir /tmp/test
+$ ./raft-example --raft_id=nodeC --grpc_addr=localhost:40053 --raft_addr=localhost:50053 --raft_data_dir /tmp/test
 
 $ go install github.com/xkeyideal/raft-manager/cmd/manager@latest
 $ ./manager localhost:40051 add_voter nodeB localhost:50052 0
 $ ./manager localhost:40051 add_voter nodeC localhost:50053 0
-$ go run cmd/cmd.go &
-$ ./manager localhost:40051 leadership_transfer
+
+$ go run cmd/cmd.go
 ```
 
 You start up three nodes, and bootstrap one of them. Then you tell the bootstrapped node where to find peers. Those peers sync up to the state of the bootstrapped node and become members of the cluster. Once your cluster is running, you never need to pass `--raft_bootstrap` again.
@@ -68,7 +68,7 @@ var (
 	server_lookup = map[string]string{
 		"127.0.0.1:50051": "127.0.0.1:40051",
 		"127.0.0.1:50052": "127.0.0.1:40052",
-		"127.0.0.1:50053": "127.0.0.1:40051",
+		"127.0.0.1:50053": "127.0.0.1:40053",
 	}
 )
 ```

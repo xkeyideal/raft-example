@@ -24,18 +24,9 @@ var (
 	server_lookup = map[string]string{
 		"127.0.0.1:50051": "127.0.0.1:40051",
 		"127.0.0.1:50052": "127.0.0.1:40052",
-		"127.0.0.1:50053": "127.0.0.1:40051",
+		"127.0.0.1:50053": "127.0.0.1:40053",
 	}
 )
-
-func ctxTimeout(ctx context.Context) time.Duration {
-	deadline, _ := ctx.Deadline()
-	timeout := time.Until(deadline)
-	if timeout <= 0 {
-		return 0
-	}
-	return timeout
-}
 
 type KV interface {
 	Apply(ctx context.Context, key, val string) (uint64, error)

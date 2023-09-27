@@ -22,13 +22,10 @@ type Engine struct {
 }
 
 func NewEngine(raftDir, nodeId, raftAddr, grpcAddr string, raftBootstrap bool) (*Engine, error) {
-	userDir := filepath.Join(raftDir, nodeId, "user_data")
-	store, err := fsm.NewStore(userDir)
+	fsm, err := fsm.NewStateMachine(raftAddr, nodeId, filepath.Join(raftDir, nodeId, "user_data"))
 	if err != nil {
 		return nil, err
 	}
-
-	fsm := fsm.NewStateMachine(raftAddr, nodeId, store)
 
 	metaDir := filepath.Join(raftDir, nodeId, "meta_data")
 	r, err := newRaft(metaDir, nodeId, raftAddr, fsm, raftBootstrap)
@@ -83,10 +80,7 @@ func NewEngine(raftDir, nodeId, raftAddr, grpcAddr string, raftBootstrap bool) (
 	return e, nil
 }
 func (engine *Engine) Close() {
-	if engine.grpcServer != nil {
-		engine.grpcServer.Stop()
-	}
-
+	engine.grpcServer.Stop()
 	engine.raft.close()
 	engine.fsm.Close()
 }

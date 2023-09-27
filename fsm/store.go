@@ -14,14 +14,14 @@ import (
 	pebbledb "github.com/xkeyideal/raft-pebbledb"
 )
 
-type Store struct {
+type store struct {
 	baseDir string
 	log     pebble.Logger
 	db      *atomic.Pointer[pebble.DB]
 	closed  *atomic.Bool
 }
 
-func NewStore(baseDir string) (*Store, error) {
+func newStore(baseDir string) (*store, error) {
 	cfg := pebbledb.DefaultPebbleDBConfig()
 
 	if err := os.MkdirAll(baseDir, os.ModePerm); err != nil {
@@ -30,7 +30,7 @@ func NewStore(baseDir string) (*Store, error) {
 
 	log := &Logger{}
 
-	// 获取pebbledb的存储目录
+	// get pebbledb directory
 	dbdir, err := getPebbleDBDir(baseDir)
 	if err != nil {
 		return nil, err
@@ -41,7 +41,7 @@ func NewStore(baseDir string) (*Store, error) {
 		return nil, err
 	}
 
-	return &Store{
+	return &store{
 		baseDir: baseDir,
 		log:     log,
 		db:      atomic.NewPointer[pebble.DB](db),
@@ -49,15 +49,15 @@ func NewStore(baseDir string) (*Store, error) {
 	}, nil
 }
 
-func (s *Store) getColumnFamily(cf string) byte {
+func (s *store) getColumnFamily(cf string) byte {
 	return pebbleCfMap[cf]
 }
 
-func (s *Store) isclosed() bool {
+func (s *store) isclosed() bool {
 	return s.closed.Load()
 }
 
-func (s *Store) getBytes(key []byte) ([]byte, error) {
+func (s *store) getBytes(key []byte) ([]byte, error) {
 	if s.closed.Load() {
 		return []byte{}, pebble.ErrClosed
 	}
@@ -74,7 +74,6 @@ func (s *Store) getBytes(key []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	// 这里需要copy
 	data := make([]byte, len(val))
 	copy(data, val)
 
@@ -85,31 +84,31 @@ func (s *Store) getBytes(key []byte) ([]byte, error) {
 	return data, nil
 }
 
-func (s *Store) buildColumnFamilyKey(cf byte, key []byte) []byte {
+func (s *store) buildColumnFamilyKey(cf byte, key []byte) []byte {
 	return append([]byte{cf}, key...)
 }
 
-func (s *Store) batch() *pebble.Batch {
+func (s *store) batch() *pebble.Batch {
 	db := s.db.Load()
 	return db.NewBatch()
 }
 
-func (s *Store) write(b *pebble.Batch) error {
+func (s *store) write(b *pebble.Batch) error {
 	return b.Commit(pebble.Sync)
 }
 
-func (s *Store) getIterator() *pebble.Iterator {
+func (s *store) getIterator() *pebble.Iterator {
 	db := s.db.Load()
 	iter, _ := db.NewIter(&pebble.IterOptions{})
 	return iter
 }
 
-func (s *Store) getSnapshot() *pebble.Snapshot {
+func (s *store) getSnapshot() *pebble.Snapshot {
 	db := s.db.Load()
 	return db.NewSnapshot()
 }
 
-func (s *Store) saveSnapShot(nodeId, raftAddr string, snapshot *pebble.Snapshot, sink raft.SnapshotSink) error {
+func (s *store) saveSnapShot(nodeId, raftAddr string, snapshot *pebble.Snapshot, sink raft.SnapshotSink) error {
 	iter, _ := snapshot.NewIter(&pebble.IterOptions{})
 	defer iter.Close()
 
@@ -163,7 +162,7 @@ func (s *Store) saveSnapShot(nodeId, raftAddr string, snapshot *pebble.Snapshot,
 	return sink.Close()
 }
 
-func (s *Store) recoverSnapShot(nodeId, raftAddr string, reader io.ReadCloser) error {
+func (s *store) recoverSnapShot(nodeId, raftAddr string, reader io.ReadCloser) error {
 	// s.baseDir/uuid
 	dbdir := getNewRandomDBDirName(s.baseDir)
 
@@ -283,7 +282,7 @@ func (s *Store) recoverSnapShot(nodeId, raftAddr string, reader io.ReadCloser) e
 	return syncDir(parent)
 }
 
-func (s *Store) close() error {
+func (s *store) close() error {
 	if s == nil {
 		return nil
 	}

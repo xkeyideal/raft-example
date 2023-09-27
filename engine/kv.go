@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"time"
@@ -154,7 +152,7 @@ func (s *raftServer) Stats() (map[string]any, error) {
 		return nil, err
 	}
 
-	dirSz, err := dirSize(s.raftDir)
+	dirSz, err := fsm.DirSize(s.raftDir)
 	if err != nil {
 		return nil, err
 	}
@@ -214,24 +212,4 @@ type Server struct {
 	ID       string `json:"id,omitempty"`
 	Addr     string `json:"addr,omitempty"`
 	Suffrage string `json:"suffrage,omitempty"`
-}
-
-// dirSize returns the total size of all files in the given directory
-func dirSize(path string) (int64, error) {
-	var size int64
-	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
-		if err != nil {
-			// If the file doesn't exist, we can ignore it. Snapshot files might
-			// disappear during walking.
-			if os.IsNotExist(err) {
-				return nil
-			}
-			return err
-		}
-		if !info.IsDir() {
-			size += info.Size()
-		}
-		return err
-	})
-	return size, err
 }

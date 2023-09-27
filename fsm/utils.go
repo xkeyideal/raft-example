@@ -31,7 +31,7 @@ type Logger struct {
 }
 
 func (log *Logger) Infof(format string, args ...interface{}) {
-	// fmt.Printf(format, args...)
+	fmt.Printf(format, args...)
 }
 
 func (log *Logger) Fatalf(format string, args ...interface{}) {
@@ -39,7 +39,7 @@ func (log *Logger) Fatalf(format string, args ...interface{}) {
 }
 
 // dirSize returns the total size of all files in the given directory
-func dirSize(path string) (int64, error) {
+func DirSize(path string) (int64, error) {
 	var size int64
 	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
 		if err != nil {

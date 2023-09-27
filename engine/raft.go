@@ -23,7 +23,8 @@ const (
 	appliedWaitDelay    = 100 * time.Millisecond
 	observerChanLen     = 50
 
-	raftDBPath = "raftdb"
+	raftDBPath       = "raftdb"
+	raftSnapshotPath = "raft-snapshot"
 )
 
 type raftServer struct {
@@ -89,7 +90,7 @@ func newRaft(baseDir, nodeId, raftAddr string, rfsm *fsm.StateMachine, raftBoots
 
 	s.raftdb = raftdb
 
-	snapshotDir := filepath.Join(baseDir, "raft-snapshot")
+	snapshotDir := filepath.Join(baseDir, raftSnapshotPath)
 	fss, err := raft.NewFileSnapshotStore(snapshotDir, 3, os.Stderr)
 	if err != nil {
 		return nil, fmt.Errorf(`raft.NewFileSnapshotStore(%q, ...): %v`, snapshotDir, err)
@@ -123,7 +124,7 @@ func newRaft(baseDir, nodeId, raftAddr string, rfsm *fsm.StateMachine, raftBoots
 
 	// Register and listen for leader changes.
 	s.raft.RegisterObserver(s.observer)
-	s.observe()
+	go s.observe()
 
 	if raftBootstrap {
 		cfg := raft.Configuration{
@@ -155,24 +156,22 @@ func (s *raftServer) DeregisterObserver(o *raft.Observer) {
 }
 
 func (s *raftServer) observe() {
-	go func() {
-		for {
-			select {
-			case o := <-s.observerChan:
-				switch signal := o.Data.(type) {
-				case raft.FailedHeartbeatObservation:
-					log.Println("FailedHeartbeatObservation", signal)
-				case raft.LeaderObservation:
-					log.Println("LeaderObservation", signal)
-					// s.selfLeaderChange(signal.LeaderID == raft.ServerID(s.raftID))
-				}
-
-			case <-s.shutdownCh:
-				s.raft.DeregisterObserver(s.observer)
-				return
+	for {
+		select {
+		case o := <-s.observerChan:
+			switch signal := o.Data.(type) {
+			case raft.FailedHeartbeatObservation:
+				log.Println("FailedHeartbeatObservation", signal)
+			case raft.LeaderObservation:
+				log.Println("LeaderObservation", signal)
+				// s.selfLeaderChange(signal.LeaderID == raft.ServerID(s.raftID))
 			}
+
+		case <-s.shutdownCh:
+			s.raft.DeregisterObserver(s.observer)
+			return
 		}
-	}()
+	}
 }
 
 // refer: https://github.com/hashicorp/consul/blob/main/agent/consul/leader.go#L71

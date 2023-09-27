@@ -30,7 +30,7 @@ type CommandResponse struct {
 	Error error  `json:"error"`
 }
 
-func (store *Store) applyCommand(data []byte) *CommandResponse {
+func (store *store) applyCommand(data []byte) *CommandResponse {
 	c := &Command{}
 	err := json.Unmarshal(data, c)
 	if err != nil {
@@ -58,7 +58,7 @@ func (store *Store) applyCommand(data []byte) *CommandResponse {
 	}
 }
 
-func (store *Store) insert(data []byte) error {
+func (store *store) insert(data []byte) error {
 	var sp SetPayload
 	err := json.Unmarshal(data, &sp)
 	if err != nil {
@@ -73,7 +73,7 @@ func (store *Store) insert(data []byte) error {
 	return store.write(batch)
 }
 
-func (store *Store) query(key []byte) ([]byte, error) {
+func (store *store) query(key []byte) ([]byte, error) {
 	if store.isclosed() {
 		return nil, pebble.ErrClosed
 	}

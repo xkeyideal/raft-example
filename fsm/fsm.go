@@ -13,20 +13,25 @@ type StateMachine struct {
 	raftAddr string
 	nodeId   string
 	fsmIndex *atomic.Uint64
-	store    *Store
+	store    *store
 }
 
-func NewStateMachine(raftAddr string, nodeId string, s *Store) *StateMachine {
+func NewStateMachine(raftAddr string, nodeId string, dir string) (*StateMachine, error) {
+	store, err := newStore(dir)
+	if err != nil {
+		return nil, err
+	}
+
 	return &StateMachine{
 		raftAddr: raftAddr,
 		nodeId:   nodeId,
-		store:    s,
+		store:    store,
 		fsmIndex: atomic.NewUint64(0),
-	}
+	}, nil
 }
 
 func (r *StateMachine) Stats() (map[string]any, error) {
-	dirSz, err := dirSize(r.store.baseDir)
+	dirSz, err := DirSize(r.store.baseDir)
 	if err != nil {
 		return nil, err
 	}

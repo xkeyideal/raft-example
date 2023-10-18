@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/hashicorp/raft"
@@ -140,8 +139,6 @@ func (r *GRPCService) forwardRequestToLeader(forwardCtx context.Context, method 
 		return false, nil, err
 	}
 	defer conn.Close()
-
-	log.Printf("Request: %s", req)
 
 	resp := messageFromDescriptor(m.Output()).Interface()
 	if err := conn.Invoke(forwardCtx, "/Example/"+string(m.Name()), req, resp); err != nil {

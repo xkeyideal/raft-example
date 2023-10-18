@@ -119,6 +119,8 @@ var (
 
 So the most critical parameters of raft for followers sync logs are SnapshotThreshold and TrailingLogs, and the value of SnapshotThreshold should be less than the value of TrailingLogs.
 
+5. NoSnapshotRestoreOnStart, the default to `false`, will restoreSnapshot when `NewRaft`. 
+
 ## Inspired
 
 [raft-grpc-example](https://github.com/Jille/raft-grpc-example)

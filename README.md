@@ -17,17 +17,28 @@ $ mkdir /tmp/test/node{A,B,C}
 $ ./raft-example --raft_bootstrap --raft_id=nodeA --grpc_addr=localhost:40051 --raft_addr=localhost:50051 --raft_data_dir /tmp/test
 $ ./raft-example --raft_id=nodeB --grpc_addr=localhost:40052 --raft_addr=localhost:50052 --raft_data_dir /tmp/test
 $ ./raft-example --raft_id=nodeC --grpc_addr=localhost:40053 --raft_addr=localhost:50053 --raft_data_dir /tmp/test
-
-$ go install github.com/xkeyideal/raft-manager/cmd/manager@latest
-$ ./manager localhost:40051 add_voter nodeB localhost:50052 0
-$ ./manager localhost:40051 add_voter nodeC localhost:50053 0
-
-$ go run cmd/cmd.go
 ```
 
 You start up three nodes, and bootstrap one of them. Then you tell the bootstrapped node where to find peers. Those peers sync up to the state of the bootstrapped node and become members of the cluster. Once your cluster is running, you never need to pass `--raft_bootstrap` again.
 
 [raft-manager](https://github.com/xkeyideal/raft-manager) is used to communicate with the cluster and add the other nodes.
+
+add nodes into your cluster, first call `applied_index`, then `add_voter`.
+
+```shell
+$ go install github.com/xkeyideal/raft-manager/cmd/manager@latest
+$ ./manager localhost:40051 applied_index
+$ ./manager localhost:40051 add_voter nodeB localhost:50052 132
+
+$ ./manager localhost:40051 applied_index
+$ ./manager localhost:40051 add_voter nodeC localhost:50053 133
+```
+
+exec cmd.go test the raft write and read.
+
+```shell
+$ go run cmd/cmd.go
+```
 
 ## Raft
 

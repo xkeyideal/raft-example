@@ -73,6 +73,7 @@ func newRaft(baseDir, nodeId, raftAddr string, rfsm *fsm.StateMachine, raftBoots
 		ElectionTimeout:          1000 * time.Millisecond,
 		CommitTimeout:            50 * time.Millisecond,
 		MaxAppendEntries:         64,
+		BatchApplyCh:             true,
 		ShutdownOnRemove:         true,
 		TrailingLogs:             10240,
 		SnapshotInterval:         120 * time.Second,

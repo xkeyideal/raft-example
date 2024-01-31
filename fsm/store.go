@@ -99,7 +99,7 @@ func (s *store) write(b *pebble.Batch) error {
 
 func (s *store) getIterator() *pebble.Iterator {
 	db := s.db.Load()
-	iter, _ := db.NewIter(&pebble.IterOptions{})
+	iter := db.NewIter(&pebble.IterOptions{})
 	return iter
 }
 
@@ -109,7 +109,7 @@ func (s *store) getSnapshot() *pebble.Snapshot {
 }
 
 func (s *store) saveSnapShot(nodeId, raftAddr string, snapshot *pebble.Snapshot, sink raft.SnapshotSink) error {
-	iter, _ := snapshot.NewIter(&pebble.IterOptions{})
+	iter := snapshot.NewIter(&pebble.IterOptions{})
 	defer iter.Close()
 
 	start := time.Now()

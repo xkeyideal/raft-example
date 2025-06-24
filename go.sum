@@ -183,8 +183,8 @@ github.com/xkeyideal/grpcbalance v1.65.0 h1:Kh0lSWylVTSxt0a5UlyMwObMv/oiZ9nJ6uAB
 github.com/xkeyideal/grpcbalance v1.65.0/go.mod h1:omhH+6bcygONctjuXvmIWpa7p6CRpoEQ4I3cdCFVTko=
 github.com/xkeyideal/raft-manager v1.2.0 h1:hCbL9hyzM3NP44q29qHFaB0ueWD2xB+Kij/ehXmulDA=
 github.com/xkeyideal/raft-manager v1.2.0/go.mod h1:AP54jylEKCahr97lKvWms+1rdF8GpkQzFjlKfzcn+/g=
-github.com/xkeyideal/raft-pebbledb v1.6.0 h1:f2EW9J77MRxnFmUiYy95ACqqvadDhvpZXljqbazJNnQ=
-github.com/xkeyideal/raft-pebbledb v1.6.0/go.mod h1:a86cT+Y5FEgzZknACCvqEvoSqiUOAIfKeuHskIbXqIo=
+github.com/xkeyideal/raft-pebbledb v1.7.0 h1:pbLkpTwTmRXQi2cX9yWTXwMaHthxx9uYMqXH5NQg4ek=
+github.com/xkeyideal/raft-pebbledb v1.7.0/go.mod h1:XGJm9rfjIV7p+T+5vtFwA3zTt9hcofCiKD+HYM4LTMI=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 go.uber.org/atomic v1.7.0/go.mod h1:fEN4uk6kAWBTFdckzkM89CLk9XfWZrxpCo0nPH17wJc=

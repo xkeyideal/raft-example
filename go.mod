@@ -9,7 +9,7 @@ require (
 	github.com/iancoleman/strcase v0.3.0
 	github.com/xkeyideal/grpcbalance v1.65.0
 	github.com/xkeyideal/raft-manager v1.2.0
-	github.com/xkeyideal/raft-pebbledb v1.6.0
+	github.com/xkeyideal/raft-pebbledb v1.7.0
 	go.uber.org/atomic v1.11.0
 	google.golang.org/grpc v1.65.0
 	google.golang.org/protobuf v1.34.2

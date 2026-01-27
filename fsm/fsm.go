@@ -5,7 +5,7 @@ import (
 
 	"go.uber.org/atomic"
 
-	"github.com/cockroachdb/pebble"
+	pebble "github.com/cockroachdb/pebble/v2"
 	"github.com/hashicorp/raft"
 )
 

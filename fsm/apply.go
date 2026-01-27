@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/cockroachdb/pebble"
+	pebble "github.com/cockroachdb/pebble/v2"
 )
 
 type CommandType int

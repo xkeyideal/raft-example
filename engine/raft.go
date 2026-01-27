@@ -14,7 +14,7 @@ import (
 	"github.com/hashicorp/raft"
 
 	"github.com/xkeyideal/raft-example/fsm"
-	pebbledb "github.com/xkeyideal/raft-pebbledb"
+	pebbledb "github.com/xkeyideal/raft-pebbledb/v2"
 )
 
 const (

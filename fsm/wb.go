@@ -1,6 +1,6 @@
 package fsm
 
-import "github.com/cockroachdb/pebble"
+import pebble "github.com/cockroachdb/pebble/v2"
 
 type pebbleWriteBatch struct {
 	wb *pebble.Batch

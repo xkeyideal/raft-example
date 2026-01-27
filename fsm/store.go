@@ -9,9 +9,9 @@ import (
 
 	"go.uber.org/atomic"
 
-	"github.com/cockroachdb/pebble"
+	pebble "github.com/cockroachdb/pebble/v2"
 	"github.com/hashicorp/raft"
-	pebbledb "github.com/xkeyideal/raft-pebbledb"
+	pebbledb "github.com/xkeyideal/raft-pebbledb/v2"
 )
 
 type store struct {

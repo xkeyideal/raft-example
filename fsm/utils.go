@@ -34,6 +34,10 @@ func (log *Logger) Infof(format string, args ...interface{}) {
 	fmt.Printf(format, args...)
 }
 
+func (log *Logger) Errorf(format string, args ...interface{}) {
+	fmt.Printf(format, args...)
+}
+
 func (log *Logger) Fatalf(format string, args ...interface{}) {
 	fmt.Printf(format, args...)
 }

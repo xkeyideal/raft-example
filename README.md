@@ -84,6 +84,296 @@ var (
 )
 ```
 
+## Dynamic Service Discovery with Gossip
+
+In production environments, hardcoded address mappings are impractical. This project supports **dynamic service discovery** using [HashiCorp Memberlist](https://github.com/hashicorp/memberlist) (gossip protocol).
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Address Resolution                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│   ┌─────────────────┐     ┌─────────────────────────────────┐   │
+│   │ AddressResolver │◄────│ resolver/resolver.go            │   │
+│   │   (interface)   │     │ - GetGRPCAddr(nodeID) string    │   │
+│   └────────┬────────┘     │ - SetGRPCAddr(nodeID, addr)     │   │
+│            │              │ - RemoveAddr(nodeID)            │   │
+│     ┌──────┴──────┐       └─────────────────────────────────┘   │
+│     │             │                                             │
+│     ▼             ▼                                             │
+│ ┌───────────┐ ┌───────────┐                                     │
+│ │  Static   │ │  Gossip   │                                     │
+│ │ Resolver  │ │ Resolver  │                                     │
+│ │(hardcoded)│ │(memberlist│                                     │
+│ └───────────┘ └─────┬─────┘                                     │
+│                     │                                           │
+│                     ▼                                           │
+│              ┌─────────────┐                                    │
+│              │   Gossip    │  gossip/gossip.go                  │
+│              │ (memberlist)│  - Node join/leave events          │
+│              │             │  - Propagate NodeMeta              │
+│              └─────────────┘                                    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### How It Works
+
+1. **NodeMeta Propagation**: Each node broadcasts its metadata (NodeID, RaftAddr, GRPCAddr) via gossip
+2. **Automatic Discovery**: When a node joins/leaves, all other nodes are notified
+3. **Leader Forwarding**: When forwarding requests to the leader, the gRPC address is resolved dynamically
+
+### Usage
+
+#### Enable Gossip Mode
+
+```bash
+# Node A (bootstrap node)
+./raft-example --raft_bootstrap --raft_id=nodeA \
+  --grpc_addr=192.168.1.1:40051 --raft_addr=192.168.1.1:50051 \
+  --gossip_addr=0.0.0.0:7946 \
+  --raft_data_dir /data/raft
+
+# Node B (joins via gossip seeds)
+./raft-example --raft_id=nodeB \
+  --grpc_addr=192.168.1.2:40051 --raft_addr=192.168.1.2:50051 \
+  --gossip_addr=0.0.0.0:7946 --gossip_seeds=192.168.1.1:7946 \
+  --raft_data_dir /data/raft
+
+# Node C
+./raft-example --raft_id=nodeC \
+  --grpc_addr=192.168.1.3:40051 --raft_addr=192.168.1.3:50051 \
+  --gossip_addr=0.0.0.0:7946 --gossip_seeds=192.168.1.1:7946,192.168.1.2:7946 \
+  --raft_data_dir /data/raft
+```
+
+#### Command Line Flags
+
+| Flag | Description | Example |
+|------|-------------|---------|
+| `--gossip_addr` | Gossip bind address. Empty to disable gossip. | `0.0.0.0:7946` |
+| `--gossip_seeds` | Comma-separated list of seed nodes to join | `192.168.1.1:7946,192.168.1.2:7946` |
+
+#### Backward Compatibility
+
+If `--gossip_addr` is not provided, the system falls back to the static `server_lookup` map (development mode).
+
+### Key Components
+
+#### gossip/gossip.go
+
+```go
+// NodeMeta is propagated to all cluster members via gossip
+type NodeMeta struct {
+    NodeID   string `json:"node_id"`   // Raft server ID
+    RaftAddr string `json:"raft_addr"` // Raft transport address
+    GRPCAddr string `json:"grpc_addr"` // gRPC service address
+}
+
+// Key functions
+func New(cfg Config) (*Gossip, error)           // Create gossip instance
+func (g *Gossip) GetGRPCAddr(nodeID string) (string, bool) // Resolve address
+func (g *Gossip) OnJoin(fn func(NodeMeta))      // Register join callback
+func (g *Gossip) OnLeave(fn func(NodeMeta))     // Register leave callback
+func (g *Gossip) Leave(timeout time.Duration)   // Gracefully leave cluster
+```
+
+#### resolver/resolver.go
+
+```go
+// AddressResolver abstracts address resolution for leader forwarding
+type AddressResolver interface {
+    GetGRPCAddr(nodeID string) (grpcAddr string, ok bool)
+    SetGRPCAddr(nodeID, grpcAddr string)
+    RemoveAddr(nodeID string)
+}
+
+// Two implementations:
+// - StaticResolver: uses hardcoded map (development)
+// - GossipResolver: uses gossip for dynamic discovery (production)
+```
+
+## Linearizable Reads (ReadIndex Style)
+
+This project implements efficient linearizable reads without writing to the Raft log.
+
+### How It Works
+
+Instead of the naive approach (applying read commands through Raft log), we use:
+
+1. **VerifyLeader()**: Contact a quorum to confirm we're still the leader
+2. **Barrier Check**: Ensure we've applied all committed entries (via `readyForConsistentReads` flag)
+3. **Local Read**: Safe to read locally after the above checks pass
+
+### Code Path
+
+```
+Client Request (Linearizable=true)
+         │
+         ▼
+┌─────────────────────────────────┐
+│  service/service.go: Get()     │
+│  - If not leader: forward      │
+│  - If leader: call Query()     │
+└─────────────────┬───────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────┐
+│  engine/kv.go: Query()         │
+│  - ConsistentRead() check      │
+│  - ReadLocal() from Pebble     │
+└─────────────────┬───────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────┐
+│ engine/linearizable.go:        │
+│ ConsistentRead()               │
+│  - VerifyLeader() → quorum     │
+│  - isReadyForConsistentReads() │
+└─────────────────────────────────┘
+```
+
+### Benefits
+
+| Aspect | Old (Apply-based) | New (ReadIndex-style) |
+|--------|-------------------|----------------------|
+| Write to log | Yes | No |
+| Disk I/O | High | Low |
+| Latency | Higher | Lower |
+| Consistency | Linearizable | Linearizable |
+
+## Graceful Shutdown
+
+The engine supports graceful shutdown to prevent request loss during restarts.
+
+### Features
+
+- **gRPC GracefulStop**: Waits for in-flight requests to complete (with 10s timeout)
+- **Gossip Leave**: Notifies cluster members before shutting down
+- **Ordered Cleanup**: gRPC → Gossip → Raft → FSM
+
+### Code
+
+```go
+// engine/engine.go: Close()
+func (e *Engine) Close() {
+    e.shutdownOnce.Do(func() {
+        close(e.shutdownCh)
+        
+        // 1. Gracefully stop gRPC (wait for requests)
+        ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+        defer cancel()
+        
+        done := make(chan struct{})
+        go func() {
+            e.grpcServer.GracefulStop()
+            close(done)
+        }()
+        
+        select {
+        case <-done:
+            log.Println("[INFO] gRPC server stopped gracefully")
+        case <-ctx.Done():
+            e.grpcServer.Stop() // Force stop after timeout
+        }
+        
+        // 2. Leave gossip cluster
+        if e.gossip != nil {
+            e.gossip.Leave(5 * time.Second)
+            e.gossip.Shutdown()
+        }
+        
+        // 3. Close Raft and FSM
+        e.raft.close()
+        e.fsm.Close()
+    })
+}
+```
+
+## Abandon Mechanism (Consul-style Blocking Query Support)
+
+The FSM implements the **abandon mechanism** from Consul, which is essential for implementing blocking/watch-style queries that need to be notified when snapshot restore happens.
+
+### Why It's Needed
+
+When a snapshot restore occurs:
+1. The entire FSM state is replaced
+2. Indices may have gone backwards
+3. Data may have changed significantly
+4. Blocking queries waiting on old data become stale
+
+The abandon mechanism solves this by providing a channel that watchers can monitor.
+
+### How It Works
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                    Abandon Mechanism Flow                       │
+├────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Watcher A ─────┐                                               │
+│                 │     ┌─────────────────┐                       │
+│  Watcher B ─────┼────►│   AbandonCh()   │◄──── Snapshot Restore │
+│                 │     └────────┬────────┘                       │
+│  Watcher C ─────┘              │                                │
+│                                │ close(oldCh)                   │
+│                                ▼                                │
+│                   All watchers wake up immediately!             │
+│                   → Re-query with index=0                       │
+│                   → Refresh cached data                         │
+│                                                                 │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### API
+
+```go
+// Get the abandon channel to watch for state restoration
+abandonCh := fsm.AbandonCh()
+
+// Watch for abandon in a select
+select {
+case <-abandonCh:
+    // State was restored! Reset and re-query
+    lastIndex = 0
+    refreshAllCaches()
+case <-time.After(timeout):
+    // Normal timeout
+}
+```
+
+### Example: Blocking Query Implementation
+
+```go
+// service/blocking_query.go provides production-ready implementations:
+
+// BlockingQuery performs a blocking query with abandon support
+result, err := service.BlockingQuery(ctx, fsm, minIndex, timeout, queryFn)
+if result.Abandoned {
+    // State was restored, retry from beginning
+    return retryFromBeginning()
+}
+
+// WatchKey continuously watches a key with automatic abandon handling
+service.WatchKey(ctx, fsm, func(result *BlockingQueryResult) error {
+    if result.Abandoned {
+        log.Println("State restored, refreshing...")
+        return refreshAllCaches()
+    }
+    return processUpdate(result.Value)
+}, queryFn)
+```
+
+### Complete Example
+
+See [examples/abandon_example.go](examples/abandon_example.go) for complete usage patterns including:
+- Direct AbandonCh usage
+- BlockingQuery for single operations
+- WatchKey for continuous monitoring
+- Multiple concurrent watchers
+
 ## Raft Config Parameters
 
 1. SnapshotInterval & SnapshotThreshold, `SnapshotInterval` controls how often we check if we should perform a snapshot.
@@ -139,6 +429,12 @@ So the most critical parameters of raft for followers sync logs are SnapshotThre
 [rqlite](github.com/rqlite/rqlite) is an easy-to-use, lightweight, distributed relational database, which uses SQLite as its storage engine.
 
 [consul](github.com/hashicorp/consul)
+
+## Skills
+
+If you are using this repository inside VS Code with GitHub Copilot skills enabled, the following skill can help you use this project as a real-world Raft reference (leader forwarding, linearizable reads, snapshots, membership changes, etc.):
+
+- [raft-realworld-reference](.github/skills/raft-realworld-reference/SKILL.md)
 
 ## License
 raft-example is under the BSD 2-Clause License. See the LICENSE file for details.

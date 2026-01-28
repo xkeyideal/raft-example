@@ -65,6 +65,7 @@ func (s *raftServer) Apply(ctx context.Context, key, val string) (uint64, error)
 
 func (s *raftServer) Query(ctx context.Context, key []byte, consistent bool) (uint64, []byte, error) {
 	if !consistent {
+		// Stale read: read directly from local store (may be stale)
 		res := s.store.ReadLocal(key)
 
 		if res.Error != nil {
@@ -74,35 +75,27 @@ func (s *raftServer) Query(ctx context.Context, key []byte, consistent bool) (ui
 		return s.raft.AppliedIndex(), res.Val, nil
 	}
 
+	// Linearizable read using VerifyLeader + local read
+	// This is more efficient than going through Raft Apply for reads
+	// because it doesn't write to the log, but still ensures we're the leader
+	// and have applied all committed entries.
+	//
+	// The process:
+	// 1. VerifyLeader() - confirms we're still the leader by contacting a quorum
+	// 2. Check readyForConsistentReads - ensures we've applied the barrier after becoming leader
+	// 3. Read locally - safe because we know we're up-to-date
 	if err := s.ConsistentRead(); err != nil {
 		return 0, nil, fmt.Errorf("ConsistentRead %s: %s", s.raftAddr, err.Error())
 	}
 
-	c := &fsm.Command{
-		Type:    fsm.Query,
-		Payload: key,
-	}
-
-	data, _ := json.Marshal(c)
-
-	timeout := ctxTimeout(ctx)
-	if timeout <= raftApplyTimeout {
-		timeout = raftApplyTimeout
-	}
-
-	f := s.raft.Apply(data, timeout)
-	if err := f.Error(); err != nil {
-		return 0, nil, fmt.Errorf("Apply %s: %s", s.raftAddr, err.Error())
-	}
-
-	s.dbAppliedIndex.Store(f.Index())
-
-	res := f.Response().(*fsm.CommandResponse)
+	// After ConsistentRead succeeds, we can safely read from local store
+	// because we've verified leadership and applied all committed entries
+	res := s.store.ReadLocal(key)
 	if res.Error != nil {
 		return 0, nil, res.Error
 	}
 
-	return f.Index(), res.Val, nil
+	return s.raft.AppliedIndex(), res.Val, nil
 }
 
 func (s *raftServer) GetLeader() (bool, raft.ServerAddress, error) {

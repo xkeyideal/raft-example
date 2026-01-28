@@ -4,13 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/raft"
 	"github.com/iancoleman/strcase"
 	"github.com/xkeyideal/raft-example/fsm"
 	pb "github.com/xkeyideal/raft-example/proto"
+	"github.com/xkeyideal/raft-example/resolver"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
@@ -20,11 +23,16 @@ const (
 )
 
 var (
-	server_lookup = map[string]string{
+	// Default static lookup for backward compatibility
+	defaultStaticLookup = map[string]string{
 		"127.0.0.1:50051": "127.0.0.1:40051",
 		"127.0.0.1:50052": "127.0.0.1:40052",
 		"127.0.0.1:50053": "127.0.0.1:40053",
 	}
+
+	// connCache caches gRPC connections to leader nodes to avoid creating new connections for each request
+	connCache   = make(map[string]*grpc.ClientConn)
+	connCacheMu sync.RWMutex
 )
 
 type KV interface {
@@ -36,14 +44,22 @@ type KV interface {
 
 type GRPCService struct {
 	pb.UnimplementedExampleServer
-	fsm *fsm.StateMachine
-	kv  KV
+	fsm      *fsm.StateMachine
+	kv       KV
+	resolver resolver.AddressResolver
 }
 
+// NewGrpcService creates a new gRPC service with the default static resolver.
 func NewGrpcService(fsm *fsm.StateMachine, kv KV) *GRPCService {
+	return NewGrpcServiceWithResolver(fsm, kv, resolver.NewStaticResolver(defaultStaticLookup))
+}
+
+// NewGrpcServiceWithResolver creates a new gRPC service with a custom address resolver.
+func NewGrpcServiceWithResolver(fsm *fsm.StateMachine, kv KV, r resolver.AddressResolver) *GRPCService {
 	return &GRPCService{
-		fsm: fsm,
-		kv:  kv,
+		fsm:      fsm,
+		kv:       kv,
+		resolver: r,
 	}
 }
 
@@ -130,15 +146,15 @@ func (r *GRPCService) forwardRequestToLeader(forwardCtx context.Context, method 
 		return false, nil, rpcErr
 	}
 
-	ctx, dcancel := context.WithTimeout(context.Background(), grpcConnectTimeout)
-	defer dcancel()
+	grpcAddr, ok := r.resolver.GetGRPCAddr(string(leader))
+	if !ok {
+		return false, nil, fmt.Errorf("unknown leader gRPC address for raft addr %s", leader)
+	}
 
-	conn, err := grpc.DialContext(ctx, server_lookup[string(leader)],
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := getOrCreateConn(grpcAddr)
 	if err != nil {
 		return false, nil, err
 	}
-	defer conn.Close()
 
 	resp := messageFromDescriptor(m.Output()).Interface()
 	if err := conn.Invoke(forwardCtx, "/Example/"+string(m.Name()), req, resp); err != nil {
@@ -146,6 +162,37 @@ func (r *GRPCService) forwardRequestToLeader(forwardCtx context.Context, method 
 	}
 
 	return true, resp, nil
+}
+
+// getOrCreateConn returns a cached connection or creates a new one
+func getOrCreateConn(addr string) (*grpc.ClientConn, error) {
+	connCacheMu.RLock()
+	conn, ok := connCache[addr]
+	connCacheMu.RUnlock()
+
+	if ok && conn.GetState() != connectivity.Shutdown {
+		return conn, nil
+	}
+
+	connCacheMu.Lock()
+	defer connCacheMu.Unlock()
+
+	// Double check after acquiring write lock
+	if conn, ok := connCache[addr]; ok && conn.GetState() != connectivity.Shutdown {
+		return conn, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), grpcConnectTimeout)
+	defer cancel()
+
+	newConn, err := grpc.DialContext(ctx, addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+
+	connCache[addr] = newConn
+	return newConn, nil
 }
 
 // messageFromDescriptor creates a new Message for a MessageDescriptor.
@@ -164,4 +211,37 @@ var protoTypes = []protoreflect.ProtoMessage{
 	&pb.AddResponse{},
 	&pb.GetRequest{},
 	&pb.GetResponse{},
+}
+
+// WatchKeyBlocking demonstrates the use of abandon mechanism for blocking queries.
+// This method blocks until the key's value changes or the state is abandoned due to restore.
+//
+// Example client usage:
+//
+//	var lastIndex uint64 = 0
+//	for {
+//	    result, err := client.WatchKeyBlocking(ctx, "my-key", lastIndex)
+//	    if err != nil {
+//	        log.Printf("Watch error: %v", err)
+//	        time.Sleep(time.Second)
+//	        continue
+//	    }
+//	    if result.Abandoned {
+//	        log.Println("State restored, restarting watch from beginning")
+//	        lastIndex = 0
+//	        continue
+//	    }
+//	    log.Printf("Key changed at index %d: %s", result.CurrentIndex, result.Value)
+//	    lastIndex = result.CurrentIndex
+//	}
+func (r *GRPCService) WatchKeyBlocking(ctx context.Context, key string, minIndex uint64) (*BlockingQueryResult, error) {
+	queryFn := func() ([]byte, uint64, error) {
+		index, val, err := r.kv.Query(ctx, []byte(key), false)
+		if err != nil {
+			return nil, 0, err
+		}
+		return val, index, nil
+	}
+
+	return BlockingQuery(ctx, r.fsm, minIndex, 30*time.Second, queryFn)
 }

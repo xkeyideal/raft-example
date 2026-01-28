@@ -2,18 +2,42 @@ package fsm
 
 import (
 	"io"
+	"sync"
+	"time"
 
-	"go.uber.org/atomic"
+	atomicv2 "go.uber.org/atomic"
 
 	pebble "github.com/cockroachdb/pebble/v2"
 	"github.com/hashicorp/raft"
 )
 
+// SnapshotMetrics holds snapshot operation metrics
+// This follows the Consul pattern for monitoring
+type SnapshotMetrics struct {
+	LastSnapshotDuration time.Duration
+	LastSnapshotSize     int64
+	LastSnapshotRecords  uint64
+	LastSnapshotTime     time.Time
+	LastRestoreDuration  time.Duration
+	LastRestoreTime      time.Time
+	SnapshotCount        uint64
+	RestoreCount         uint64
+}
+
 type StateMachine struct {
 	raftAddr string
 	nodeId   string
-	fsmIndex *atomic.Uint64
+	fsmIndex *atomicv2.Uint64
 	store    *store
+
+	// abandonCh is used to signal watchers that this state store has been
+	// abandoned (usually during a restore). This is only ever closed.
+	abandonCh   chan struct{}
+	abandonOnce sync.Once
+
+	// metrics holds snapshot operation metrics
+	metrics     SnapshotMetrics
+	metricsLock sync.RWMutex
 }
 
 func NewStateMachine(raftAddr string, nodeId string, dir string) (*StateMachine, error) {
@@ -23,10 +47,11 @@ func NewStateMachine(raftAddr string, nodeId string, dir string) (*StateMachine,
 	}
 
 	return &StateMachine{
-		raftAddr: raftAddr,
-		nodeId:   nodeId,
-		store:    store,
-		fsmIndex: atomic.NewUint64(0),
+		raftAddr:  raftAddr,
+		nodeId:    nodeId,
+		store:     store,
+		fsmIndex:  atomicv2.NewUint64(0),
+		abandonCh: make(chan struct{}),
 	}, nil
 }
 
@@ -36,10 +61,22 @@ func (r *StateMachine) Stats() (map[string]any, error) {
 		return nil, err
 	}
 
+	r.metricsLock.RLock()
+	metrics := r.metrics
+	r.metricsLock.RUnlock()
+
 	stats := map[string]any{
-		"fsm_index":    r.GetFsmIndex(),
-		"fsm_dir":      r.store.baseDir,
-		"fsm_dir_size": dirSz,
+		"fsm_index":              r.GetFsmIndex(),
+		"fsm_dir":                r.store.baseDir,
+		"fsm_dir_size":           dirSz,
+		"snapshot_count":         metrics.SnapshotCount,
+		"restore_count":          metrics.RestoreCount,
+		"last_snapshot_duration": metrics.LastSnapshotDuration.String(),
+		"last_snapshot_size":     metrics.LastSnapshotSize,
+		"last_snapshot_records":  metrics.LastSnapshotRecords,
+		"last_snapshot_time":     metrics.LastSnapshotTime.Format(time.RFC3339),
+		"last_restore_duration":  metrics.LastRestoreDuration.String(),
+		"last_restore_time":      metrics.LastRestoreTime.Format(time.RFC3339),
 	}
 
 	return stats, nil
@@ -71,7 +108,7 @@ func (r *StateMachine) ReadLocal(key []byte) *CommandResponse {
 // The returned value is returned to the client as the ApplyFuture.Response.
 func (r *StateMachine) Apply(log *raft.Log) any {
 	if r.store.isclosed() {
-		return nil
+		return &CommandResponse{Error: pebble.ErrClosed}
 	}
 
 	r.fsmIndex.Store(log.Index)
@@ -97,8 +134,10 @@ func (r *StateMachine) Snapshot() (raft.FSMSnapshot, error) {
 	}
 
 	return &fsmSnapshot{
-		fsm:      r,
-		snapshot: r.store.getSnapshot(),
+		fsm:       r,
+		snapshot:  r.store.getSnapshot(),
+		lastIndex: r.fsmIndex.Load(), // Capture current index for snapshot header
+		startTime: time.Now(),        // Track snapshot start time for metrics
 	}, nil
 }
 
@@ -106,11 +145,55 @@ func (r *StateMachine) Snapshot() (raft.FSMSnapshot, error) {
 // concurrently with any other command. The FSM must discard all previous
 // state before restoring the snapshot.
 func (r *StateMachine) Restore(reader io.ReadCloser) error {
+	defer reader.Close() // Always close the reader when done
+
 	if r.store.isclosed() {
 		return pebble.ErrClosed
 	}
 
-	return r.store.recoverSnapShot(r.nodeId, r.raftAddr, reader)
+	startTime := time.Now()
+
+	header, err := r.store.recoverSnapShot(r.nodeId, r.raftAddr, reader)
+	if err != nil {
+		return err
+	}
+
+	// Restore fsmIndex from snapshot header
+	// This ensures the FSM index is correctly restored after snapshot recovery
+	if header != nil && header.LastIndex > 0 {
+		r.fsmIndex.Store(header.LastIndex)
+	}
+
+	// Update metrics
+	r.metricsLock.Lock()
+	r.metrics.RestoreCount++
+	r.metrics.LastRestoreDuration = time.Since(startTime)
+	r.metrics.LastRestoreTime = time.Now()
+	r.metricsLock.Unlock()
+
+	// Abandon the old state - this signals any blocking queries to wake up
+	// Following Consul's pattern: close abandonCh and create a new one
+	r.abandon()
+
+	return nil
+}
+
+// AbandonCh returns a channel you can wait on to know if the state store was
+// abandoned (usually during a restore). Blocking queries should watch this
+// to detect when they need to re-query after a restore.
+func (r *StateMachine) AbandonCh() <-chan struct{} {
+	return r.abandonCh
+}
+
+// abandon signals that the state store has been abandoned.
+// This is called during Restore to notify blocking queries.
+func (r *StateMachine) abandon() {
+	// Close the current channel to signal watchers
+	oldCh := r.abandonCh
+	// Create a new channel for future watchers
+	r.abandonCh = make(chan struct{})
+	// Close the old channel to wake up any waiting goroutines
+	close(oldCh)
 }
 
 func (r *StateMachine) Close() error {
@@ -122,14 +205,30 @@ func (r *StateMachine) Close() error {
 }
 
 type fsmSnapshot struct {
-	fsm      *StateMachine
-	snapshot *pebble.Snapshot
+	fsm       *StateMachine
+	snapshot  *pebble.Snapshot
+	lastIndex uint64    // Last applied index at snapshot time
+	startTime time.Time // Start time for metrics tracking
 }
 
 // Persist should dump all necessary state to the WriteCloser 'sink',
 // and call sink.Close() when finished or call sink.Cancel() on error.
 func (s *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
-	return s.fsm.store.saveSnapShot(s.fsm.nodeId, s.fsm.raftAddr, s.snapshot, sink)
+	result, err := s.fsm.store.saveSnapShot(s.fsm.nodeId, s.fsm.raftAddr, s.lastIndex, s.snapshot, sink)
+	if err != nil {
+		return err
+	}
+
+	// Update metrics after successful persist
+	s.fsm.metricsLock.Lock()
+	s.fsm.metrics.SnapshotCount++
+	s.fsm.metrics.LastSnapshotDuration = time.Since(s.startTime)
+	s.fsm.metrics.LastSnapshotSize = result.Size
+	s.fsm.metrics.LastSnapshotRecords = result.Records
+	s.fsm.metrics.LastSnapshotTime = time.Now()
+	s.fsm.metricsLock.Unlock()
+
+	return nil
 }
 
 // Release is invoked when we are finished with the snapshot.

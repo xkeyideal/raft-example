@@ -236,6 +236,8 @@ var protoTypes = []protoreflect.ProtoMessage{
 	&pb.AddResponse{},
 	&pb.GetRequest{},
 	&pb.GetResponse{},
+	&pb.WatchRequest{},
+	&pb.WatchResponse{},
 }
 
 // WatchKeyBlocking demonstrates the use of abandon mechanism for blocking queries.
@@ -269,4 +271,64 @@ func (r *GRPCService) WatchKeyBlocking(ctx context.Context, key string, minIndex
 	}
 
 	return BlockingQuery(ctx, r.fsm, minIndex, 30*time.Second, queryFn)
+}
+
+// Watch implements the Watch gRPC streaming RPC.
+// It demonstrates the abandon mechanism (Consul-style blocking query) via gRPC.
+//
+// The server streams WatchResponse whenever:
+// 1. The key's value changes (index >= min_index)
+// 2. The state is abandoned due to snapshot restore (abandoned=true)
+//
+// Client should reconnect with min_index=0 when receiving abandoned=true.
+func (r *GRPCService) Watch(req *pb.WatchRequest, stream pb.Example_WatchServer) error {
+	ctx := stream.Context()
+	key := req.Key
+	minIndex := req.MinIndex
+
+	timeout := time.Duration(req.TimeoutSeconds) * time.Second
+	if timeout <= 0 {
+		timeout = BlockingQueryTimeout
+	}
+
+	queryFn := func() ([]byte, uint64, error) {
+		index, val, err := r.kv.Query(ctx, []byte(key), false)
+		if err != nil {
+			return nil, 0, err
+		}
+		return val, index, nil
+	}
+
+	// Continuously watch until context is cancelled
+	currentMinIndex := minIndex
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		result, err := BlockingQuery(ctx, r.fsm, currentMinIndex, timeout, queryFn)
+		if err != nil {
+			return err
+		}
+
+		resp := &pb.WatchResponse{
+			Value:        string(result.Value),
+			CurrentIndex: result.CurrentIndex,
+			Abandoned:    result.Abandoned,
+		}
+
+		if err := stream.Send(resp); err != nil {
+			return err
+		}
+
+		if result.Abandoned {
+			// State was restored, reset minIndex for next iteration
+			currentMinIndex = 0
+		} else {
+			// Wait for next change
+			currentMinIndex = result.CurrentIndex + 1
+		}
+	}
 }

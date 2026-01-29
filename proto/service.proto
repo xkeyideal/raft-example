@@ -8,6 +8,15 @@ service Example {
 	rpc Add(AddRequest) returns (AddResponse) {}
 	rpc Get(GetRequest) returns (GetResponse) {}
 	rpc Stat(StatRequest) returns (StatResponse) {}
+	
+	// Watch implements blocking query with abandon mechanism (Consul-style).
+	// The server streams WatchResponse whenever:
+	// 1. The key's value changes (index >= min_index)
+	// 2. The state is abandoned due to snapshot restore (abandoned=true)
+	// 3. Periodic heartbeat to keep connection alive
+	//
+	// Client should reconnect with min_index=0 when receiving abandoned=true.
+	rpc Watch(WatchRequest) returns (stream WatchResponse) {}
 }
 
 message AddRequest {
@@ -33,4 +42,31 @@ message StatRequest {}
 
 message StatResponse {
 	string stats = 1;
+}
+
+// WatchRequest is the request for the Watch RPC.
+message WatchRequest {
+	// The key to watch for changes.
+	string key = 1;
+	
+	// Minimum index to wait for. Use 0 to get current value immediately.
+	// After receiving a response, set this to current_index + 1 for the next watch.
+	uint64 min_index = 2;
+	
+	// Maximum time to wait in seconds before returning current value.
+	// Use 0 for default (5 minutes).
+	int64 timeout_seconds = 3;
+}
+
+// WatchResponse is the response for the Watch RPC.
+message WatchResponse {
+	// The current value of the key.
+	string value = 1;
+	
+	// The index at which this value was read.
+	uint64 current_index = 2;
+	
+	// True if the state was abandoned due to snapshot restore.
+	// When this is true, client should reset min_index to 0 and re-watch.
+	bool abandoned = 3;
 }

@@ -328,52 +328,96 @@ The abandon mechanism solves this by providing a channel that watchers can monit
 └────────────────────────────────────────────────────────────────┘
 ```
 
-### API
+### gRPC Watch API
 
-```go
-// Get the abandon channel to watch for state restoration
-abandonCh := fsm.AbandonCh()
+The abandon mechanism is exposed via a gRPC streaming API:
 
-// Watch for abandon in a select
-select {
-case <-abandonCh:
-    // State was restored! Reset and re-query
-    lastIndex = 0
-    refreshAllCaches()
-case <-time.After(timeout):
-    // Normal timeout
+```protobuf
+// proto/service.proto
+service Example {
+    // Watch implements blocking query with abandon mechanism
+    rpc Watch(WatchRequest) returns (stream WatchResponse) {}
+}
+
+message WatchRequest {
+    string key = 1;           // Key to watch
+    uint64 min_index = 2;     // Wait for index >= min_index
+    int64 timeout_seconds = 3; // Max wait time (0 = default 5min)
+}
+
+message WatchResponse {
+    string value = 1;         // Current value
+    uint64 current_index = 2; // Current index
+    bool abandoned = 3;       // True if state was restored
 }
 ```
 
-### Example: Blocking Query Implementation
+### Client Usage Example
+
+```bash
+# Start watching a key (cmd/cmd.go)
+go run cmd/cmd.go -watch -key=my-key
+```
 
 ```go
-// service/blocking_query.go provides production-ready implementations:
+// cmd/cmd.go demonstrates complete Watch usage:
 
-// BlockingQuery performs a blocking query with abandon support
-result, err := service.BlockingQuery(ctx, fsm, minIndex, timeout, queryFn)
-if result.Abandoned {
-    // State was restored, retry from beginning
-    return retryFromBeginning()
-}
+// 1. Start watching
+stream, err := client.Watch(ctx, &pb.WatchRequest{
+    Key:            "my-key",
+    MinIndex:       lastIndex + 1,
+    TimeoutSeconds: 30,
+})
 
-// WatchKey continuously watches a key with automatic abandon handling
-service.WatchKey(ctx, fsm, func(result *BlockingQueryResult) error {
-    if result.Abandoned {
-        log.Println("State restored, refreshing...")
-        return refreshAllCaches()
+// 2. Receive updates
+for {
+    resp, err := stream.Recv()
+    if err != nil {
+        return err
     }
-    return processUpdate(result.Value)
-}, queryFn)
+    
+    if resp.Abandoned {
+        // State was restored! Reset and reconnect
+        log.Println("State abandoned, resetting watch...")
+        lastIndex = 0
+        break // Reconnect with minIndex=0
+    }
+    
+    // Normal update
+    log.Printf("Value changed at index %d: %s", 
+        resp.CurrentIndex, resp.Value)
+    lastIndex = resp.CurrentIndex
+}
 ```
 
-### Complete Example
+### Server Implementation
 
-See [examples/abandon_example.go](examples/abandon_example.go) for complete usage patterns including:
-- Direct AbandonCh usage
-- BlockingQuery for single operations
-- WatchKey for continuous monitoring
-- Multiple concurrent watchers
+The server-side implementation uses `BlockingQuery` from `service/blocking_query.go`:
+
+```go
+// service/service.go
+func (r *GRPCService) Watch(req *pb.WatchRequest, stream pb.Example_WatchServer) error {
+    // Uses BlockingQuery which monitors FSM's AbandonCh()
+    result, err := BlockingQuery(ctx, r.fsm, minIndex, timeout, queryFn)
+    
+    // When abandoned, result.Abandoned = true
+    // Client should reset minIndex and reconnect
+    return stream.Send(&pb.WatchResponse{
+        Value:        string(result.Value),
+        CurrentIndex: result.CurrentIndex,
+        Abandoned:    result.Abandoned,
+    })
+}
+```
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Streaming** | Server pushes updates as they happen |
+| **Abandon Detection** | Immediate notification on snapshot restore |
+| **Timeout Support** | Returns current value if no changes within timeout |
+| **Multi-node** | Works on any node (leader or follower) |
 
 ## Raft Config Parameters
 

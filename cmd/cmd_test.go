@@ -105,6 +105,9 @@ func TestBasicWriteRead(t *testing.T) {
 		t.Error("Expected non-zero commit index")
 	}
 
+	// Wait for replication before stale read
+	time.Sleep(200 * time.Millisecond)
+
 	// Read back (stale read)
 	getResp, err := client.client.Get(ctx, &pb.GetRequest{
 		Key:          key,
@@ -747,6 +750,413 @@ func BenchmarkReadLinearizable(b *testing.B) {
 		_, err := client.Get(ctx, &pb.GetRequest{Key: key, Linearizable: true})
 		if err != nil {
 			b.Fatalf("Get failed: %v", err)
+		}
+	}
+}
+
+// ============================================================
+// Test: Watch Basic Functionality
+// ============================================================
+
+// checkWatchSupported checks if Watch RPC is supported by the server.
+// Returns true if supported, false otherwise (skips test with appropriate message).
+func checkWatchSupported(t *testing.T, client *TestClient) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	stream, err := client.client.Watch(ctx, &pb.WatchRequest{
+		Key:            "test",
+		MinIndex:       0,
+		TimeoutSeconds: 1,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "Unimplemented") {
+			t.Skip("Watch RPC not supported by server (server needs restart with new code)")
+			return false
+		}
+		return true // Other errors, let test handle it
+	}
+
+	// Try to receive to check if implemented
+	_, err = stream.Recv()
+	if err != nil && strings.Contains(err.Error(), "Unimplemented") {
+		t.Skip("Watch RPC not supported by server (server needs restart with new code)")
+		return false
+	}
+	return true
+}
+
+func TestWatchBasic(t *testing.T) {
+	client := newTestClient(t, clusterAddrs[0])
+	defer client.Close()
+
+	if !checkWatchSupported(t, client) {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Write initial value
+	key := fmt.Sprintf("watch-key-%d", time.Now().UnixNano())
+	initialVal := "watch-initial-value"
+
+	_, err := client.client.Add(ctx, &pb.AddRequest{Key: key, Val: initialVal})
+	if err != nil {
+		t.Fatalf("Initial write failed: %v", err)
+	}
+
+	// Wait for replication before starting watch
+	time.Sleep(200 * time.Millisecond)
+
+	// Start watch with minIndex=0 (should return immediately with current value)
+	stream, err := client.client.Watch(ctx, &pb.WatchRequest{
+		Key:            key,
+		MinIndex:       0,
+		TimeoutSeconds: 5,
+	})
+	if err != nil {
+		t.Fatalf("Watch failed to start: %v", err)
+	}
+
+	// Should receive current value immediately
+	resp, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("Watch Recv failed: %v", err)
+	}
+
+	if resp.Value != initialVal {
+		t.Errorf("Expected initial value %q, got %q", initialVal, resp.Value)
+	}
+
+	if resp.Abandoned {
+		t.Error("Unexpected abandoned=true on first response")
+	}
+
+	t.Logf("Watch received initial value: %s at index %d", resp.Value, resp.CurrentIndex)
+}
+
+// ============================================================
+// Test: Watch Receives Updates
+// ============================================================
+
+func TestWatchReceivesUpdates(t *testing.T) {
+	client := newTestClient(t, clusterAddrs[0])
+	defer client.Close()
+
+	if !checkWatchSupported(t, client) {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Write initial value
+	key := fmt.Sprintf("watch-update-key-%d", time.Now().UnixNano())
+	initialVal := "initial"
+
+	addResp, err := client.client.Add(ctx, &pb.AddRequest{Key: key, Val: initialVal})
+	if err != nil {
+		t.Fatalf("Initial write failed: %v", err)
+	}
+	initialIndex := addResp.CommitIndex
+
+	t.Logf("Initial value written at index %d", initialIndex)
+
+	// Start watch with minIndex = initialIndex + 1 (wait for next change)
+	stream, err := client.client.Watch(ctx, &pb.WatchRequest{
+		Key:            key,
+		MinIndex:       initialIndex + 1,
+		TimeoutSeconds: 10,
+	})
+	if err != nil {
+		t.Fatalf("Watch failed to start: %v", err)
+	}
+
+	// Write a new value in a goroutine
+	updatedVal := "updated-value"
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		_, err := client.client.Add(ctx, &pb.AddRequest{Key: key, Val: updatedVal})
+		if err != nil {
+			t.Logf("Update write failed: %v", err)
+		} else {
+			t.Logf("Update written")
+		}
+	}()
+
+	// Watch should receive the update
+	resp, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("Watch Recv failed: %v", err)
+	}
+
+	if resp.Value != updatedVal {
+		t.Errorf("Expected updated value %q, got %q", updatedVal, resp.Value)
+	}
+
+	if resp.CurrentIndex <= initialIndex {
+		t.Errorf("Expected index > %d, got %d", initialIndex, resp.CurrentIndex)
+	}
+
+	t.Logf("Watch received update: %s at index %d", resp.Value, resp.CurrentIndex)
+}
+
+// ============================================================
+// Test: Watch Timeout Returns Current Value
+// ============================================================
+
+func TestWatchTimeout(t *testing.T) {
+	client := newTestClient(t, clusterAddrs[0])
+	defer client.Close()
+
+	if !checkWatchSupported(t, client) {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Write initial value
+	key := fmt.Sprintf("watch-timeout-key-%d", time.Now().UnixNano())
+	val := "timeout-test-value"
+
+	addResp, err := client.client.Add(ctx, &pb.AddRequest{Key: key, Val: val})
+	if err != nil {
+		t.Fatalf("Initial write failed: %v", err)
+	}
+
+	// Start watch with very high minIndex (should timeout)
+	startTime := time.Now()
+	stream, err := client.client.Watch(ctx, &pb.WatchRequest{
+		Key:            key,
+		MinIndex:       addResp.CommitIndex + 1000, // Very high, will never be reached
+		TimeoutSeconds: 2,                          // Short timeout
+	})
+	if err != nil {
+		t.Fatalf("Watch failed to start: %v", err)
+	}
+
+	// Should timeout and return current value
+	resp, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("Watch Recv failed: %v", err)
+	}
+
+	elapsed := time.Since(startTime)
+
+	// Should have waited approximately 2 seconds
+	if elapsed < 1*time.Second || elapsed > 5*time.Second {
+		t.Logf("Warning: timeout took %v, expected ~2s", elapsed)
+	}
+
+	// Should return current value on timeout
+	if resp.Value != val {
+		t.Errorf("Expected value %q on timeout, got %q", val, resp.Value)
+	}
+
+	t.Logf("Watch timed out after %v, returned value: %s", elapsed, resp.Value)
+}
+
+// ============================================================
+// Test: Watch Multiple Clients
+// ============================================================
+
+func TestWatchMultipleClients(t *testing.T) {
+	clients := createClients(t)
+	defer closeClients(clients)
+
+	if !checkWatchSupported(t, clients[0]) {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Write initial value
+	key := fmt.Sprintf("watch-multi-key-%d", time.Now().UnixNano())
+	initialVal := "multi-initial"
+
+	addResp, err := clients[0].client.Add(ctx, &pb.AddRequest{Key: key, Val: initialVal})
+	if err != nil {
+		t.Fatalf("Initial write failed: %v", err)
+	}
+
+	// Start watchers on all nodes
+	const numWatchers = 3
+	streams := make([]pb.Example_WatchClient, numWatchers)
+
+	for i := 0; i < numWatchers; i++ {
+		stream, err := clients[i].client.Watch(ctx, &pb.WatchRequest{
+			Key:            key,
+			MinIndex:       addResp.CommitIndex + 1,
+			TimeoutSeconds: 10,
+		})
+		if err != nil {
+			t.Fatalf("Watch %d failed to start: %v", i, err)
+		}
+		streams[i] = stream
+	}
+
+	// Write update
+	updatedVal := "multi-updated"
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		_, err := clients[0].client.Add(ctx, &pb.AddRequest{Key: key, Val: updatedVal})
+		if err != nil {
+			t.Logf("Update failed: %v", err)
+		}
+	}()
+
+	// All watchers should receive the update
+	var wg sync.WaitGroup
+	var successCount atomic.Int64
+
+	for i, stream := range streams {
+		wg.Add(1)
+		go func(id int, s pb.Example_WatchClient) {
+			defer wg.Done()
+
+			resp, err := s.Recv()
+			if err != nil {
+				t.Logf("Watcher %d Recv failed: %v", id, err)
+				return
+			}
+
+			if resp.Value == updatedVal {
+				successCount.Add(1)
+				t.Logf("Watcher %d received update at index %d", id, resp.CurrentIndex)
+			} else {
+				t.Logf("Watcher %d got wrong value: %s", id, resp.Value)
+			}
+		}(i, stream)
+	}
+
+	wg.Wait()
+
+	if successCount.Load() != int64(numWatchers) {
+		t.Errorf("Expected all %d watchers to receive update, only %d did",
+			numWatchers, successCount.Load())
+	}
+}
+
+// ============================================================
+// Test: Watch From Different Nodes
+// ============================================================
+
+func TestWatchFromFollower(t *testing.T) {
+	clients := createClients(t)
+	defer closeClients(clients)
+
+	if !checkWatchSupported(t, clients[0]) {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Write via leader (assuming node 0)
+	key := fmt.Sprintf("watch-follower-key-%d", time.Now().UnixNano())
+	initialVal := "follower-watch-initial"
+
+	addResp, err := clients[0].client.Add(ctx, &pb.AddRequest{Key: key, Val: initialVal})
+	if err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	// Wait for replication
+	time.Sleep(500 * time.Millisecond)
+
+	// Start watch from a follower (node 1 or 2)
+	followerClient := clients[1]
+
+	stream, err := followerClient.client.Watch(ctx, &pb.WatchRequest{
+		Key:            key,
+		MinIndex:       addResp.CommitIndex + 1,
+		TimeoutSeconds: 10,
+	})
+	if err != nil {
+		t.Fatalf("Watch from follower failed: %v", err)
+	}
+
+	// Write update via leader
+	updatedVal := "follower-watch-updated"
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		_, err := clients[0].client.Add(ctx, &pb.AddRequest{Key: key, Val: updatedVal})
+		if err != nil {
+			t.Logf("Update failed: %v", err)
+		}
+	}()
+
+	// Follower's watch should receive the update
+	resp, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("Watch Recv failed: %v", err)
+	}
+
+	if resp.Value != updatedVal {
+		t.Errorf("Expected %q, got %q", updatedVal, resp.Value)
+	}
+
+	t.Logf("Follower watch received update: %s at index %d", resp.Value, resp.CurrentIndex)
+}
+
+// ============================================================
+// Benchmark: Watch Latency
+// ============================================================
+
+func BenchmarkWatchLatency(b *testing.B) {
+	ctx := context.Background()
+
+	conn, err := grpc.DialContext(ctx, clusterAddrs[0],
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		b.Fatalf("failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	client := pb.NewExampleClient(conn)
+
+	// Check if Watch is supported
+	stream, err := client.Watch(ctx, &pb.WatchRequest{
+		Key:            "test",
+		MinIndex:       0,
+		TimeoutSeconds: 1,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "Unimplemented") {
+			b.Skip("Watch RPC not supported by server")
+		}
+	} else {
+		_, err = stream.Recv()
+		if err != nil && strings.Contains(err.Error(), "Unimplemented") {
+			b.Skip("Watch RPC not supported by server")
+		}
+	}
+
+	// Setup: write a key
+	key := "bench-watch-key"
+	_, err = client.Add(ctx, &pb.AddRequest{Key: key, Val: "bench-value"})
+	if err != nil {
+		b.Fatalf("Setup write failed: %v", err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		stream, err := client.Watch(ctx, &pb.WatchRequest{
+			Key:            key,
+			MinIndex:       0, // Get current value immediately
+			TimeoutSeconds: 1,
+		})
+		if err != nil {
+			b.Fatalf("Watch failed: %v", err)
+		}
+
+		_, err = stream.Recv()
+		if err != nil {
+			b.Fatalf("Watch Recv failed: %v", err)
 		}
 	}
 }

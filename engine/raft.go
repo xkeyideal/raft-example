@@ -76,7 +76,7 @@ func newRaft(baseDir, nodeId, raftAddr string, rfsm *fsm.StateMachine, raftBoots
 	cfg := &raft.Config{
 		ProtocolVersion:          raft.ProtocolVersionMax,
 		HeartbeatTimeout:         1000 * time.Millisecond,
-		ElectionTimeout:          1000 * time.Millisecond,
+		ElectionTimeout:          3000 * time.Millisecond,
 		CommitTimeout:            50 * time.Millisecond,
 		MaxAppendEntries:         64,
 		BatchApplyCh:             true,
@@ -84,11 +84,12 @@ func newRaft(baseDir, nodeId, raftAddr string, rfsm *fsm.StateMachine, raftBoots
 		TrailingLogs:             10240,
 		SnapshotInterval:         120 * time.Second,
 		SnapshotThreshold:        8192,
-		LeaderLeaseTimeout:       500 * time.Millisecond,
+		LeaderLeaseTimeout:       1500 * time.Millisecond,
 		LogLevel:                 hclog.Warn.String(),
 		LocalID:                  raft.ServerID(nodeId),
 		NotifyCh:                 s.raftNotifyCh,
 		NoSnapshotRestoreOnStart: false,
+		PreVoteDisabled:          false, // 启用 PreVote，防止分区节点恢复后干扰集群
 	}
 
 	raftdb, err := pebbledb.NewPebbleStore(filepath.Join(baseDir, raftDBPath), &fsm.Logger{}, pebbledb.DefaultPebbleDBConfig())

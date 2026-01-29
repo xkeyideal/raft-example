@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	atomicv2 "go.uber.org/atomic"
+	"go.uber.org/atomic"
 
 	pebble "github.com/cockroachdb/pebble/v2"
 	"github.com/hashicorp/raft"
@@ -27,7 +27,7 @@ type SnapshotMetrics struct {
 type StateMachine struct {
 	raftAddr string
 	nodeId   string
-	fsmIndex *atomicv2.Uint64
+	fsmIndex *atomic.Uint64
 	store    *store
 
 	// abandonCh is used to signal watchers that this state store has been
@@ -50,7 +50,7 @@ func NewStateMachine(raftAddr string, nodeId string, dir string) (*StateMachine,
 		raftAddr:  raftAddr,
 		nodeId:    nodeId,
 		store:     store,
-		fsmIndex:  atomicv2.NewUint64(0),
+		fsmIndex:  atomic.NewUint64(0),
 		abandonCh: make(chan struct{}),
 	}, nil
 }

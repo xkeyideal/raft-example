@@ -21,8 +21,6 @@ import (
 
 const (
 	barrierWriteTimeout = 2 * time.Minute
-	grpcConnectTimeout  = 3 * time.Second
-	appliedWaitDelay    = 100 * time.Millisecond
 	observerChanLen     = 50
 
 	raftDBPath       = "raftdb"

@@ -75,7 +75,7 @@ func newStore(baseDir string) (*store, error) {
 	return &store{
 		baseDir: baseDir,
 		log:     log,
-		db:      atomic.NewPointer[pebble.DB](db),
+		db:      atomic.NewPointer(db),
 		closed:  atomic.NewBool(false),
 	}, nil
 }

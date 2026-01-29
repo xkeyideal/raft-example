@@ -47,18 +47,6 @@ type Engine struct {
 	wg           sync.WaitGroup
 }
 
-// NewEngine creates a new Engine with static address resolution (backward compatible).
-func NewEngine(raftDir, nodeId, raftAddr, grpcAddr string, raftBootstrap bool) (*Engine, error) {
-	return NewEngineWithConfig(EngineConfig{
-		RaftDir:       raftDir,
-		NodeID:        nodeId,
-		RaftAddr:      raftAddr,
-		GRPCAddr:      grpcAddr,
-		RaftBootstrap: raftBootstrap,
-		GossipEnabled: false,
-	})
-}
-
 // NewEngineWithConfig creates a new Engine with the given configuration.
 func NewEngineWithConfig(cfg EngineConfig) (*Engine, error) {
 	fsm, err := fsm.NewStateMachine(cfg.RaftAddr, cfg.NodeID, filepath.Join(cfg.RaftDir, cfg.NodeID, "user_data"))

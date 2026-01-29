@@ -44,6 +44,7 @@ func main() {
 		RaftAddr:      *raftAddr,
 		GRPCAddr:      *grpcAddr,
 		RaftBootstrap: *raftBootstrap,
+		GossipEnabled: false,
 	}
 
 	// Enable gossip if gossip_addr is provided

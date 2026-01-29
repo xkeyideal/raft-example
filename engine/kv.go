@@ -25,9 +25,10 @@ func ctxTimeout(ctx context.Context) time.Duration {
 }
 
 func (s *raftServer) Apply(ctx context.Context, key, val string) (uint64, error) {
-	if err := s.ConsistentRead(); err != nil {
-		return 0, fmt.Errorf("ConsistentRead %s: %s", s.raftAddr, err.Error())
-	}
+	// Note: We don't call ConsistentRead() here because Apply is a write operation.
+	// raft.Apply() will automatically return ErrNotLeader if we're not the leader.
+	// Calling ConsistentRead() before Apply would add unnecessary latency
+	// (requires an extra quorum confirmation).
 
 	payload := fsm.SetPayload{
 		Key:   []byte(key),

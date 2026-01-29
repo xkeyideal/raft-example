@@ -17,7 +17,9 @@ func newPebbleWriteBatch(db *pebble.DB) *pebbleWriteBatch {
 }
 
 func (w *pebbleWriteBatch) Destroy() {
-	w.wb.Commit(w.wo)
+	// Only close the batch, don't commit.
+	// The caller should have called Commit() if there was pending data.
+	// Committing an empty batch is wasteful and may cause issues.
 	w.wb.Close()
 }
 

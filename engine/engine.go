@@ -178,6 +178,9 @@ func (e *Engine) Close() {
 	e.shutdownOnce.Do(func() {
 		close(e.shutdownCh)
 
+		// Close cached gRPC client connections
+		service.CloseAllConns()
+
 		// Gracefully stop gRPC server (wait for ongoing requests)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

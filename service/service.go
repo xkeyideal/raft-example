@@ -164,22 +164,39 @@ func (r *GRPCService) forwardRequestToLeader(forwardCtx context.Context, method 
 	return true, resp, nil
 }
 
-// getOrCreateConn returns a cached connection or creates a new one
+// getOrCreateConn returns a cached connection or creates a new one.
+// It also handles connection health checking and cleanup of stale connections.
 func getOrCreateConn(addr string) (*grpc.ClientConn, error) {
 	connCacheMu.RLock()
 	conn, ok := connCache[addr]
 	connCacheMu.RUnlock()
 
-	if ok && conn.GetState() != connectivity.Shutdown {
-		return conn, nil
+	if ok {
+		state := conn.GetState()
+		// Connection is healthy
+		if state == connectivity.Ready || state == connectivity.Idle {
+			return conn, nil
+		}
+		// Connection is connecting, wait for it
+		if state == connectivity.Connecting {
+			return conn, nil
+		}
+		// Connection is in TransientFailure or Shutdown, need to recreate
 	}
 
 	connCacheMu.Lock()
 	defer connCacheMu.Unlock()
 
 	// Double check after acquiring write lock
-	if conn, ok := connCache[addr]; ok && conn.GetState() != connectivity.Shutdown {
-		return conn, nil
+	// Also clean up any failed connections while we have the lock
+	if conn, ok := connCache[addr]; ok {
+		state := conn.GetState()
+		if state == connectivity.Ready || state == connectivity.Idle || state == connectivity.Connecting {
+			return conn, nil
+		}
+		// Close and remove failed connection
+		conn.Close()
+		delete(connCache, addr)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), grpcConnectTimeout)
@@ -193,6 +210,20 @@ func getOrCreateConn(addr string) (*grpc.ClientConn, error) {
 
 	connCache[addr] = newConn
 	return newConn, nil
+}
+
+// CloseAllConns closes all cached gRPC connections.
+// This should be called during graceful shutdown.
+func CloseAllConns() {
+	connCacheMu.Lock()
+	defer connCacheMu.Unlock()
+
+	for addr, conn := range connCache {
+		if conn != nil {
+			conn.Close()
+		}
+		delete(connCache, addr)
+	}
 }
 
 // messageFromDescriptor creates a new Message for a MessageDescriptor.

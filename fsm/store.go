@@ -313,10 +313,32 @@ func (s *store) recoverSnapShot(nodeId, raftAddr string, reader io.ReadCloser) (
 	for {
 		count++
 
-		// read key
-		_, err := io.ReadFull(reader, sz) // key size
+		// read key size (8 bytes)
+		// At the end of data, we expect to read 4-byte checksum
+		n, err := io.ReadFull(reader, sz)
 		if err == io.EOF {
+			// No more data at all - missing checksum
+			s.log.Infof("RestoreSnapshot: warning - no trailing checksum found\n")
 			break
+		}
+
+		if err == io.ErrUnexpectedEOF {
+			// Partial read - this should be the 4-byte trailing checksum
+			if n == 4 {
+				expectedChecksum := binary.LittleEndian.Uint32(sz[:4])
+				actualChecksum := hasher.Sum32()
+				if expectedChecksum != actualChecksum {
+					wb.Destroy()
+					cleanupNewDB()
+					return nil, fmt.Errorf("snapshot checksum mismatch: expected 0x%08x, got 0x%08x", expectedChecksum, actualChecksum)
+				}
+				s.log.Infof("RestoreSnapshot: checksum verified: 0x%08x\n", actualChecksum)
+				count-- // Don't count checksum as a record
+				break
+			}
+			wb.Destroy()
+			cleanupNewDB()
+			return nil, fmt.Errorf("unexpected partial read: got %d bytes, error: %w", n, err)
 		}
 
 		if err != nil {
@@ -325,22 +347,13 @@ func (s *store) recoverSnapShot(nodeId, raftAddr string, reader io.ReadCloser) (
 			return nil, err
 		}
 
-		// Check if this might be the trailing checksum (4 bytes read as 8)
 		keyLen := binary.LittleEndian.Uint64(sz)
 
-		// Validate key length to detect end of data
-		if keyLen > 1<<30 { // Unreasonably large key, likely we hit the checksum
-			// This is the trailing checksum - verify it
-			expectedChecksum := binary.LittleEndian.Uint32(sz[:4])
-			actualChecksum := hasher.Sum32()
-			if expectedChecksum != actualChecksum {
-				wb.Destroy()
-				cleanupNewDB()
-				return nil, fmt.Errorf("snapshot checksum mismatch: expected 0x%08x, got 0x%08x", expectedChecksum, actualChecksum)
-			}
-			s.log.Infof("RestoreSnapshot: checksum verified: 0x%08x\n", actualChecksum)
-			count-- // Don't count checksum as a record
-			break
+		// Sanity check key length
+		if keyLen > 1<<30 {
+			wb.Destroy()
+			cleanupNewDB()
+			return nil, fmt.Errorf("invalid key length: %d bytes (max 1GB)", keyLen)
 		}
 
 		hasher.Write(sz) // include in checksum verification

@@ -20,7 +20,9 @@ import (
 )
 
 const (
-	barrierWriteTimeout = 2 * time.Minute
+	// barrierWriteTimeout is the timeout for the initial barrier write when becoming leader.
+	// This should be long enough to allow log replication but not too long to delay leadership.
+	barrierWriteTimeout = 30 * time.Second
 	observerChanLen     = 50
 
 	raftDBPath       = "raftdb"
@@ -67,7 +69,7 @@ func newRaft(baseDir, nodeId, raftAddr string, rfsm *fsm.StateMachine, raftBoots
 		dbAppliedIndex:          atomic.NewUint64(0),
 		readyForConsistentReads: atomic.NewInt32(0),
 		store:                   rfsm,
-		raftNotifyCh:            make(chan bool, 10),
+		raftNotifyCh:            make(chan bool, 100),
 		shutdownCh:              make(chan struct{}),
 	}
 
@@ -271,6 +273,12 @@ RECONCILE:
 	barrier := s.raft.Barrier(barrierWriteTimeout)
 	if err := barrier.Error(); err != nil {
 		log.Printf("[ERROR] failed to wait for barrier: %v", err)
+		// If we got ErrNotLeader or ErrLeadershipLost, we should exit immediately
+		// rather than retrying, as we're no longer the leader.
+		if err == raft.ErrNotLeader || err == raft.ErrLeadershipLost {
+			log.Printf("[INFO] lost leadership during barrier, exiting leader loop")
+			return
+		}
 		goto WAIT
 	}
 	log.Printf("[INFO] leader barrier completed in %v", time.Since(start))
@@ -386,7 +394,13 @@ func (s *raftServer) isReadyForConsistentReads() bool {
 
 func (s *raftServer) close() {
 	close(s.shutdownCh)
-	s.raft.Shutdown()
+
+	// Wait for raft to shutdown gracefully
+	future := s.raft.Shutdown()
+	if err := future.Error(); err != nil {
+		log.Printf("[WARN] raft shutdown error: %v", err)
+	}
+
 	if s.transport != nil {
 		s.transport.Close()
 	}

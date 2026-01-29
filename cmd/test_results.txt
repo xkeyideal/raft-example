@@ -1,0 +1,78 @@
+=== Raft Cluster Integration Test Results ===
+Date: Thu Jan 29 11:30:53 CST 2026
+Cluster: localhost:40051, localhost:40052, localhost:40053
+
+=== Unit Tests ===
+=== RUN   TestBasicWriteRead
+    cmd_test.go:102: Written key=test-key-1769657455136804000, commitIndex=1099
+    cmd_test.go:121: Read key=test-key-1769657455136804000, value=test-value-12345, readAtIndex=1099
+--- PASS: TestBasicWriteRead (0.02s)
+=== RUN   TestLinearizableRead
+    cmd_test.go:160: Linearizable read: key=linearizable-key-1769657455159498000, value=linearizable-value, readAtIndex=1100
+--- PASS: TestLinearizableRead (0.02s)
+=== RUN   TestLeaderForwarding
+    cmd_test.go:188: Write via node 0 (localhost:40051): key=forward-key-0-1769657455176772000, commitIndex=1101
+    cmd_test.go:188: Write via node 1 (localhost:40052): key=forward-key-1-1769657455200652000, commitIndex=1102
+    cmd_test.go:188: Write via node 2 (localhost:40053): key=forward-key-2-1769657455223224000, commitIndex=1103
+--- PASS: TestLeaderForwarding (0.07s)
+=== RUN   TestConcurrentWrites
+    cmd_test.go:261: Concurrent writes completed in 2.654528625s
+    cmd_test.go:262: Total: 200, Success: 200, Failed: 0
+    cmd_test.go:263: Throughput: 75.34 writes/sec
+--- PASS: TestConcurrentWrites (2.66s)
+=== RUN   TestConcurrentReads
+    cmd_test.go:343: Concurrent reads: 50/50 succeeded in 2.009708ms
+    cmd_test.go:344: Read throughput: 24879.24 reads/sec
+--- PASS: TestConcurrentReads (0.55s)
+=== RUN   TestClusterStats
+    cmd_test.go:380: Node 0 (localhost:40051): node_id=nodeA
+    cmd_test.go:385:   State: Leader
+    cmd_test.go:393:   Commit Index: 1304
+    cmd_test.go:396:   Applied Index: 1304
+    cmd_test.go:403:   FSM Index: 1304
+    cmd_test.go:380: Node 1 (localhost:40052): node_id=nodeB
+    cmd_test.go:385:   State: Follower
+    cmd_test.go:393:   Commit Index: 1304
+    cmd_test.go:396:   Applied Index: 1304
+    cmd_test.go:403:   FSM Index: 1304
+    cmd_test.go:380: Node 2 (localhost:40053): node_id=nodeC
+    cmd_test.go:385:   State: Follower
+    cmd_test.go:393:   Commit Index: 1304
+    cmd_test.go:396:   Applied Index: 1304
+    cmd_test.go:403:   FSM Index: 1304
+    cmd_test.go:412: Leader is at: localhost:40051
+--- PASS: TestClusterStats (0.01s)
+=== RUN   TestReadYourWrites
+    cmd_test.go:459: Read-your-writes consistency verified for 10 operations
+--- PASS: TestReadYourWrites (0.23s)
+=== RUN   TestKeyNotFound
+    cmd_test.go:489: Non-existent key correctly returns empty value
+--- PASS: TestKeyNotFound (0.00s)
+=== RUN   TestOverwriteKey
+    cmd_test.go:537: Key overwrite verified: initial-value -> updated-value
+--- PASS: TestOverwriteKey (0.05s)
+=== RUN   TestLargeValue
+    cmd_test.go:574: Large value (1MB) write/read verified
+--- PASS: TestLargeValue (0.08s)
+=== RUN   TestSequentialWritesOrdering
+    cmd_test.go:611: Sequential writes ordering verified: 20 writes with monotonic commit indices
+    cmd_test.go:613: First commit index: 1318, Last commit index: 1337
+--- PASS: TestSequentialWritesOrdering (0.45s)
+=== RUN   TestClusterReplication
+    cmd_test.go:654: Node 0 (localhost:40051): value replicated correctly
+    cmd_test.go:654: Node 1 (localhost:40052): value replicated correctly
+    cmd_test.go:654: Node 2 (localhost:40053): value replicated correctly
+--- PASS: TestClusterReplication (0.53s)
+PASS
+ok  	github.com/xkeyideal/raft-example/cmd	5.018s
+
+=== Benchmark Tests ===
+goos: darwin
+goarch: arm64
+pkg: github.com/xkeyideal/raft-example/cmd
+cpu: Apple M4
+BenchmarkWrite-10               	     159	  22086071 ns/op
+BenchmarkReadStale-10           	   77640	     44219 ns/op
+BenchmarkReadLinearizable-10    	   35812	    106561 ns/op
+PASS
+ok  	github.com/xkeyideal/raft-example/cmd	18.808s

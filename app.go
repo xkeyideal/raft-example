@@ -12,6 +12,15 @@ import (
 )
 
 var (
+	// Default static lookup for backward compatibility
+	defaultStaticLookup = map[string]string{
+		"127.0.0.1:50051": "127.0.0.1:40051",
+		"127.0.0.1:50052": "127.0.0.1:40052",
+		"127.0.0.1:50053": "127.0.0.1:40053",
+	}
+)
+
+var (
 	raftAddr      = flag.String("raft_addr", "localhost:50051", "TCP host+port for this node")
 	grpcAddr      = flag.String("grpc_addr", "localhost:40051", "GRPC host+port for this node")
 	raftId        = flag.String("raft_id", "", "Node id used by Raft")
@@ -45,6 +54,7 @@ func main() {
 		GRPCAddr:      *grpcAddr,
 		RaftBootstrap: *raftBootstrap,
 		GossipEnabled: false,
+		StaticLookup:  defaultStaticLookup,
 	}
 
 	// Enable gossip if gossip_addr is provided

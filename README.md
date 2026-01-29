@@ -72,11 +72,12 @@ We must know the leader RPC address not raft address when want to forward reques
 
 We can use gossip protocol propagate per node RPC, raft address infos and so on. Best practices of [Gossip](https://github.com/xkeyideal/mraft/blob/master/gossip/gossip.go) by [Memberlist](https://github.com/hashicorp/memberlist)
 
-The Raft Example use constant map, you can modify it in https://github.com/xkeyideal/raft-example/blob/master/service/service.go
+The Raft Example use constant map, you can modify it in https://github.com/xkeyideal/raft-example/blob/master/app.go
 
 ```go
 var (
-	server_lookup = map[string]string{
+	// Default static lookup for backward compatibility
+	defaultStaticLookup = map[string]string{
 		"127.0.0.1:50051": "127.0.0.1:40051",
 		"127.0.0.1:50052": "127.0.0.1:40052",
 		"127.0.0.1:50053": "127.0.0.1:40053",
@@ -132,20 +133,20 @@ In production environments, hardcoded address mappings are impractical. This pro
 ```bash
 # Node A (bootstrap node)
 ./raft-example --raft_bootstrap --raft_id=nodeA \
-  --grpc_addr=192.168.1.1:40051 --raft_addr=192.168.1.1:50051 \
+  --grpc_addr=127.0.0.1:40051 --raft_addr=127.0.0.1:50051 \
   --gossip_addr=0.0.0.0:7946 \
   --raft_data_dir /data/raft
 
 # Node B (joins via gossip seeds)
 ./raft-example --raft_id=nodeB \
-  --grpc_addr=192.168.1.2:40051 --raft_addr=192.168.1.2:50051 \
-  --gossip_addr=0.0.0.0:7946 --gossip_seeds=192.168.1.1:7946 \
+  --grpc_addr=127.0.0.1:40052 --raft_addr=127.0.0.1:50052 \
+  --gossip_addr=0.0.0.0:7947 --gossip_seeds=127.0.0.1:7946 \
   --raft_data_dir /data/raft
 
 # Node C
 ./raft-example --raft_id=nodeC \
-  --grpc_addr=192.168.1.3:40051 --raft_addr=192.168.1.3:50051 \
-  --gossip_addr=0.0.0.0:7946 --gossip_seeds=192.168.1.1:7946,192.168.1.2:7946 \
+  --grpc_addr=127.0.0.1:40053 --raft_addr=127.0.0.1:50053 \
+  --gossip_addr=0.0.0.0:7948 --gossip_seeds=127.0.0.1:7946,127.0.0.1:7947 \
   --raft_data_dir /data/raft
 ```
 
@@ -154,11 +155,11 @@ In production environments, hardcoded address mappings are impractical. This pro
 | Flag | Description | Example |
 |------|-------------|---------|
 | `--gossip_addr` | Gossip bind address. Empty to disable gossip. | `0.0.0.0:7946` |
-| `--gossip_seeds` | Comma-separated list of seed nodes to join | `192.168.1.1:7946,192.168.1.2:7946` |
+| `--gossip_seeds` | Comma-separated list of seed nodes to join | `127.0.0.1:7946,127.0.0.1:7947` |
 
 #### Backward Compatibility
 
-If `--gossip_addr` is not provided, the system falls back to the static `server_lookup` map (development mode).
+If `--gossip_addr` is not provided, the system falls back to the static `defaultStaticLookup` map (development mode).
 
 ### Key Components
 

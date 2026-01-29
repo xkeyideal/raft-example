@@ -31,6 +31,8 @@ type EngineConfig struct {
 	GossipEnabled bool
 	GossipAddr    string // e.g., "0.0.0.0:7946"
 	GossipSeeds   []string
+
+	StaticLookup map[string]string // Static address lookup (used if GossipEnabled is false)
 }
 
 type Engine struct {
@@ -103,7 +105,7 @@ func NewEngineWithConfig(cfg EngineConfig) (*Engine, error) {
 	if cfg.GossipEnabled {
 		pb.RegisterExampleServer(s, service.NewGrpcServiceWithResolver(fsm, r, e.resolver))
 	} else {
-		pb.RegisterExampleServer(s, service.NewGrpcService(fsm, r))
+		pb.RegisterExampleServer(s, service.NewGrpcService(fsm, r, cfg.StaticLookup))
 	}
 	raftmanager.Register(s, r.raft)
 

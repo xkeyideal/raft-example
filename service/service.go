@@ -23,12 +23,6 @@ const (
 )
 
 var (
-	// Default static lookup for backward compatibility
-	defaultStaticLookup = map[string]string{
-		"127.0.0.1:50051": "127.0.0.1:40051",
-		"127.0.0.1:50052": "127.0.0.1:40052",
-		"127.0.0.1:50053": "127.0.0.1:40053",
-	}
 
 	// connCache caches gRPC connections to leader nodes to avoid creating new connections for each request
 	connCache   = make(map[string]*grpc.ClientConn)
@@ -50,8 +44,8 @@ type GRPCService struct {
 }
 
 // NewGrpcService creates a new gRPC service with the default static resolver.
-func NewGrpcService(fsm *fsm.StateMachine, kv KV) *GRPCService {
-	return NewGrpcServiceWithResolver(fsm, kv, resolver.NewStaticResolver(defaultStaticLookup))
+func NewGrpcService(fsm *fsm.StateMachine, kv KV, staticLookup map[string]string) *GRPCService {
+	return NewGrpcServiceWithResolver(fsm, kv, resolver.NewStaticResolver(staticLookup))
 }
 
 // NewGrpcServiceWithResolver creates a new gRPC service with a custom address resolver.

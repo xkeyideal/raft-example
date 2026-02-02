@@ -152,7 +152,8 @@ func (s *store) saveSnapShot(nodeId, raftAddr string, lastIndex uint64, snapshot
 	hasher := crc32.NewIEEE()
 
 	// Write snapshot header (we'll update checksum at the end)
-	headerSize := 8 + 8 + 8 + 8 + 2 + len(nodeId) + 4 // magic + version + lastIndex + timestamp + nodeIdLen + nodeId + checksum
+	// Header format: magic(4) + version(4) + lastIndex(8) + timestamp(8) + nodeIdLen(2) + nodeId(n) + checksum(4)
+	headerSize := 4 + 4 + 8 + 8 + 2 + len(nodeId) + 4
 	headerBuf := make([]byte, headerSize)
 	offset := 0
 
